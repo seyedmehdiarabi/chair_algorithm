@@ -1,0 +1,9 @@
+transformers
+torch
+sentence-transformers
+rank-bm25
+faiss-cpu
+numpy
+pandas
+scikit-learn
+hazm
