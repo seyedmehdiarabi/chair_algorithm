@@ -145,3 +145,6 @@ for i, r in enumerate(hybrid_weighted, 1):
 print("\n" + "=" * 50)
 print("PROCESS COMPLETED")
 print("=" * 50)
+from evaluation.compare_models import run_full_evaluation
+
+run_full_evaluation(working_data)
