@@ -1,5 +1,4 @@
 import numpy as np
-from retrieval.reranker import ContextAwareReranker
 import logging
 
 logger = logging.getLogger(__name__)
@@ -8,15 +7,23 @@ class HybridRetriever:
     def __init__(self, bm25, semantic):
         self.bm25 = bm25
         self.semantic = semantic
-        # Reranker را می‌توان اختیاری ساخت، اما برای سازگاری همچنان می‌سازیم
-        self.reranker = ContextAwareReranker(bm25.dataset)
+        self._reranker = None  # تا زمانی که نیاز نشود، None می‌ماند
+
+    @property
+    def reranker(self):
+        """بارگذاری lazy برای Reranker - فقط در صورت نیاز"""
+        if self._reranker is None:
+            from retrieval.reranker import ContextAwareReranker
+            logger.info("Loading Reranker for the first time (lazy)...")
+            self._reranker = ContextAwareReranker(self.bm25.dataset)
+        return self._reranker
 
     # =========================
     # RRF + Reranker (اختیاری)
     # =========================
     def search(self, query, k=5, initial_k=20, 
                bm25_weight=0.6, sem_weight=0.4, 
-               use_reranker=False):  # پیش‌فرض False
+               use_reranker=False):
         bm25_results = self.bm25.search(query, k=initial_k)
         semantic_results = self.semantic.search(query, k=initial_k)
 
@@ -51,7 +58,7 @@ class HybridRetriever:
             })
 
         if use_reranker:
-            reranked = self.reranker.rerank(query, candidates)
+            reranked = self.reranker.rerank(query, candidates)  # <-- الان lazy بارگذاری می‌شود
             return reranked[:k]
         else:
             candidates.sort(key=lambda x: x["fusion_score"], reverse=True)
@@ -61,6 +68,7 @@ class HybridRetriever:
     # Weighted Fusion (بدون Reranker)
     # =========================
     def search_with_weights(self, query, k=5, alpha=0.5):
+        # (بدون تغییر - همان کد قبلی)
         bm25_results = self.bm25.search(query, k=20)
         semantic_results = self.semantic.search(query, k=20)
 
