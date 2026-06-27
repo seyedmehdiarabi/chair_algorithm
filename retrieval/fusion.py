@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+from utils.error_handler import handle_errors, log_execution_time
 
 logger = logging.getLogger(__name__)
 
@@ -7,26 +8,24 @@ class HybridRetriever:
     def __init__(self, bm25, semantic):
         self.bm25 = bm25
         self.semantic = semantic
-        self._reranker = None  # تا زمانی که نیاز نشود، None می‌ماند
-
+        self._reranker = None
+    
     @property
     def reranker(self):
-        """بارگذاری lazy برای Reranker - فقط در صورت نیاز"""
         if self._reranker is None:
             from retrieval.reranker import ContextAwareReranker
-            logger.info("Loading Reranker for the first time (lazy)...")
+            logger.info("Loading Reranker (lazy)...")
             self._reranker = ContextAwareReranker(self.bm25.dataset)
         return self._reranker
-
-    # =========================
-    # RRF + Reranker (اختیاری)
-    # =========================
-    def search(self, query, k=5, initial_k=20, 
+    
+    @handle_errors
+    @log_execution_time
+    def search(self, query, k=5, initial_k=50,   # افزایش از ۲۰ به ۵۰
                bm25_weight=0.6, sem_weight=0.4, 
                use_reranker=False):
         bm25_results = self.bm25.search(query, k=initial_k)
         semantic_results = self.semantic.search(query, k=initial_k)
-
+        
         scores = {}
         for rank, item in enumerate(bm25_results):
             idx = item.get("index")
@@ -36,16 +35,15 @@ class HybridRetriever:
             idx = item.get("index")
             if idx is not None:
                 scores[idx] = scores.get(idx, 0) + sem_weight * (1.0 / (rank + 60))
-
-        # تقویت اسنادی که در هر دو لیست هستند
-        for idx in list(scores.keys()):
-            in_bm25 = any(r.get("index") == idx for r in bm25_results)
-            in_sem = any(r.get("index") == idx for r in semantic_results)
-            if in_bm25 and in_sem:
+        
+        bm25_indices = {r["index"] for r in bm25_results if "index" in r}
+        sem_indices = {r["index"] for r in semantic_results if "index" in r}
+        for idx in scores:
+            if idx in bm25_indices and idx in sem_indices:
                 scores[idx] *= 1.25
-
+        
         sorted_indices = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)[:initial_k]
-
+        
         candidates = []
         for idx in sorted_indices:
             item = self.bm25.dataset[idx]
@@ -54,43 +52,42 @@ class HybridRetriever:
                 "question": item.get("question", ""),
                 "answer": item.get("answer", ""),
                 "category": item.get("category", ""),
+                "specialty": item.get("specialty", ""),
                 "fusion_score": scores[idx]
             })
-
+        
         if use_reranker:
-            reranked = self.reranker.rerank(query, candidates)  # <-- الان lazy بارگذاری می‌شود
+            reranked = self.reranker.rerank(query, candidates)
             return reranked[:k]
         else:
             candidates.sort(key=lambda x: x["fusion_score"], reverse=True)
             return candidates[:k]
-
-    # =========================
-    # Weighted Fusion (بدون Reranker)
-    # =========================
-    def search_with_weights(self, query, k=5, alpha=0.5):
-        # (بدون تغییر - همان کد قبلی)
-        bm25_results = self.bm25.search(query, k=20)
-        semantic_results = self.semantic.search(query, k=20)
-
+    
+    @handle_errors
+    @log_execution_time
+    def search_with_weights(self, query, k=5, alpha=0.6, initial_k=50):  # افزایش initial_k
+        bm25_results = self.bm25.search(query, k=initial_k)
+        semantic_results = self.semantic.search(query, k=initial_k)
+        
         bm25_scores = np.array([r.get("score", 0) for r in bm25_results])
         semantic_scores = np.array([r.get("score", 0) for r in semantic_results])
-
+        
         def normalize(scores):
             if len(scores) == 0:
                 return np.array([])
             if scores.max() == scores.min():
                 return np.full_like(scores, 0.5)
             return (scores - scores.min()) / (scores.max() - scores.min())
-
+        
         bm25_norm = normalize(bm25_scores)
         semantic_norm = normalize(semantic_scores)
-
+        
         combined = {}
         for item, score in zip(bm25_results, bm25_norm):
             idx = item.get("index")
             if idx is not None:
                 combined[idx] = {"item": item, "bm25_score": float(score), "semantic_score": 0.0}
-
+        
         for item, score in zip(semantic_results, semantic_norm):
             idx = item.get("index")
             if idx is not None:
@@ -98,7 +95,7 @@ class HybridRetriever:
                     combined[idx]["semantic_score"] = float(score)
                 else:
                     combined[idx] = {"item": item, "bm25_score": 0.0, "semantic_score": float(score)}
-
+        
         final_results = []
         for idx, data in combined.items():
             item = data["item"]
@@ -108,10 +105,11 @@ class HybridRetriever:
                 "question": item.get("question", ""),
                 "answer": item.get("answer", ""),
                 "category": item.get("category", ""),
+                "specialty": item.get("specialty", ""),
                 "final_score": float(final_score),
                 "bm25_score": data["bm25_score"],
                 "semantic_score": data["semantic_score"]
             })
-
+        
         final_results.sort(key=lambda x: x["final_score"], reverse=True)
         return final_results[:k]

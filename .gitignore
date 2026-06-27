@@ -1,7 +1,4 @@
-`# فایل فعلی رو پشتیبان بگیرید
-mv .gitignore .gitignore.backup
-
-# یک .gitignore جدید با محتوای درست بسازید
+*.gz
 cat > .gitignore << 'EOF'
 # Python
 __pycache__/

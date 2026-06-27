@@ -24,7 +24,6 @@ class EvaluationRunner:
             all_relevant.append(relevant)
             all_retrieved.append(retrieved)
 
-        # محاسبه معیارها
         prec = sum(precision_at_k(r, p, k) for r, p in zip(all_relevant, all_retrieved)) / len(ground_truth)
         rec = sum(recall_at_k(r, p, k) for r, p in zip(all_relevant, all_retrieved)) / len(ground_truth)
         mrr = mean_reciprocal_rank(all_relevant, all_retrieved, k)

@@ -1,0 +1,189 @@
+{
+  "session_info": {
+    "timestamp": "2026-06-27T22:51:17.263388",
+    "date": "2026-06-27",
+    "time": "22:51:17",
+    "session_id": "20260627_225117"
+  },
+  "queries": [
+    {
+      "query": "سرطان چیست؟",
+      "timestamp": "2026-06-27T22:51:36.362056",
+      "results": {
+        "bm25": [
+          {
+            "index": 40776,
+            "question": "Information",
+            "answer": "سلام.سوال شما چیست",
+            "category": "psych",
+            "specialty": "",
+            "score": 10.257314758475708
+          },
+          {
+            "index": 27295,
+            "question": "Side Effects",
+            "answer": "سوالتان چیست ؟",
+            "category": "women",
+            "specialty": "",
+            "score": 10.257314758475708
+          },
+          {
+            "index": 48632,
+            "question": "Information",
+            "answer": "سلام سوالتان دقیقا چیست؟",
+            "category": "digestion",
+            "specialty": "",
+            "score": 9.93531678956811
+          },
+          {
+            "index": 45626,
+            "question": "Information",
+            "answer": "نمیدونم پالاسمی چیست نشنیدم",
+            "category": "internist",
+            "specialty": "",
+            "score": 9.93531678956811
+          },
+          {
+            "index": 7751,
+            "question": "Information",
+            "answer": "سلام سوال شما دقیقا چیست؟",
+            "category": "endo",
+            "specialty": "",
+            "score": 9.93531678956811
+          }
+        ],
+        "semantic": [
+          {
+            "index": 45365,
+            "question": "Information",
+            "answer": "عزيزم مشکل شما مربوط به متخصص داخلي يا فوق تخصص هماتولوژي ميشه",
+            "category": "انکولوژي زنان (سرطان)",
+            "score": 0.4361265301704407
+          },
+          {
+            "index": 46449,
+            "question": "Information",
+            "answer": "اسم بيماري و مدارک رو بفرستيد پرتو درماني شده است",
+            "category": "سرطان شناسی و پرتو درمانی",
+            "score": 0.4382493495941162
+          },
+          {
+            "index": 11332,
+            "question": "Information",
+            "answer": "سلامتست کاملا نرمال هست.سلولهای متاپلاستیک نه سرطانی هستن و نه به سمت سرطان پیشرفت میکنن",
+            "category": "women",
+            "score": 0.44588643312454224
+          },
+          {
+            "index": 46804,
+            "question": "Information",
+            "answer": "با سلام. حتما نياز به معاينه و بررسي تکميلي دارد.",
+            "category": "کلينيکال انکولوژي(سرطان شناسي و پرتودرماني)",
+            "score": 0.4459346532821655
+          },
+          {
+            "index": 48106,
+            "question": "Information",
+            "answer": "سلام. بله رکتوم نيز مشاهده و بررسي ميشود",
+            "category": "کلينيکال انکولوژي(سرطان شناسي و پرتودرماني)",
+            "score": 0.4785211384296417
+          }
+        ],
+        "hybrid_rrf": [
+          {
+            "index": 45214,
+            "question": "Information",
+            "answer": "3000 که پايين است بالا نيست",
+            "category": "خون و سرطان (انکولوژي)",
+            "specialty": "فوق تخصص خون و سرطان بالغين (انکولوژي)",
+            "fusion_score": 0.015868506493506497
+          },
+          {
+            "index": 45178,
+            "question": "Information",
+            "answer": "حتما بايد توسط فوق تخصص خون و سرطان ويزيت شوند.",
+            "category": "خون و سرطان بالغين (انکولوژي)",
+            "specialty": "فوق تخصص خون و سرطان بالغين (انکولوژي)",
+            "fusion_score": 0.015708755211435377
+          },
+          {
+            "index": 46804,
+            "question": "Information",
+            "answer": "با سلام. حتما نياز به معاينه و بررسي تکميلي دارد.",
+            "category": "کلينيکال انکولوژي(سرطان شناسي و پرتودرماني)",
+            "specialty": "متخصص کلينيکال انکولوژي(سرطان شناسي، پرتودرماني، شيمي درماني، براکي تراپي سرطان هاي رحم و سرويکس)",
+            "fusion_score": 0.015512265512265512
+          },
+          {
+            "index": 46449,
+            "question": "Information",
+            "answer": "اسم بيماري و مدارک رو بفرستيد پرتو درماني شده است",
+            "category": "سرطان شناسی و پرتو درمانی",
+            "specialty": "فوق تخصص خون و سرطان بالغين (انکولوژي)",
+            "fusion_score": 0.015206067105867933
+          },
+          {
+            "index": 46485,
+            "question": "Information",
+            "answer": "سلام سئوال واضح نيست",
+            "category": "انکولوژي زنان (سرطان)",
+            "specialty": "متخصص زنان و زايمان و فوق تخصص انکولوژي زنان (سرطان)",
+            "fusion_score": 0.01502097692538208
+          }
+        ],
+        "hybrid_weighted": [
+          {
+            "index": 46659,
+            "question": "Information",
+            "answer": "بايد به پزشک متخصص جراحي سرطان مراجعه کنيد تا اقدامات لازم انجام شود",
+            "category": "جراحي سرطان",
+            "specialty": "فلوشیپ تخصصی جراحي پستان (سرطان پستان)",
+            "final_score": 0.6399829364009776,
+            "bm25_score": 0.43019445204028417,
+            "semantic_score": 0.9546656629420177
+          },
+          {
+            "index": 40776,
+            "question": "Information",
+            "answer": "سلام.سوال شما چیست",
+            "category": "psych",
+            "specialty": "",
+            "final_score": 0.6,
+            "bm25_score": 1.0,
+            "semantic_score": 0.0
+          },
+          {
+            "index": 27295,
+            "question": "Side Effects",
+            "answer": "سوالتان چیست ؟",
+            "category": "women",
+            "specialty": "",
+            "final_score": 0.6,
+            "bm25_score": 1.0,
+            "semantic_score": 0.0
+          },
+          {
+            "index": 45178,
+            "question": "Information",
+            "answer": "حتما بايد توسط فوق تخصص خون و سرطان ويزيت شوند.",
+            "category": "خون و سرطان بالغين (انکولوژي)",
+            "specialty": "فوق تخصص خون و سرطان بالغين (انکولوژي)",
+            "final_score": 0.5466074925775288,
+            "bm25_score": 0.43019445204028417,
+            "semantic_score": 0.7212270533833959
+          },
+          {
+            "index": 48632,
+            "question": "Information",
+            "answer": "سلام سوالتان دقیقا چیست؟",
+            "category": "digestion",
+            "specialty": "",
+            "final_score": 0.5253008290319741,
+            "bm25_score": 0.8755013817199567,
+            "semantic_score": 0.0
+          }
+        ]
+      }
+    }
+  ]
+}

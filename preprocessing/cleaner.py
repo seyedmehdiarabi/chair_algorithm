@@ -1,42 +1,45 @@
 import re
 import hazm
-from typing import List
+from typing import List, Optional
 
 class TextCleaner:
-    def __init__(self):
+    def __init__(self, remove_stopwords: bool = True, stem: bool = False):
         self.normalizer = hazm.Normalizer()
         self.stopwords = set(hazm.stopwords_list())
-        # اضافه کردن کلمات سفارشی در صورت نیاز
-
-    def clean_text(self, text: str, remove_stopwords: bool = True, stem: bool = False) -> str:
-        """
-        پاکسازی و نرمال‌سازی متن
-        """
+        self.remove_stopwords = remove_stopwords
+        self.stem = stem
+        self.stemmer = hazm.Stemmer() if stem else None
+    
+    def clean_text(self, text: str) -> str:
+        """Clean and normalize Persian/English text"""
         if not text:
             return ""
+        
         text = str(text)
-        # نرمال‌سازی
+        # Normalize
         text = self.normalizer.normalize(text)
-        # حذف کاراکترهای اضافی
-        text = re.sub(r'[^\w\s]', ' ', text)  # حذف علائم نگارشی
-        text = re.sub(r'\s+', ' ', text).strip()  # حذف فاصله‌های اضافی
-        # حذف اعداد (اختیاری)
-        # text = re.sub(r'\d+', '', text)
-        if remove_stopwords:
+        # Remove extra spaces and punctuation
+        text = re.sub(r'[^\w\s]', ' ', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Remove stopwords if enabled
+        if self.remove_stopwords:
             tokens = text.split()
             tokens = [t for t in tokens if t not in self.stopwords]
             text = ' '.join(tokens)
-        if stem:
-            stemmer = hazm.Stemmer()
+        
+        # Stem if enabled
+        if self.stem and self.stemmer:
             tokens = text.split()
-            tokens = [stemmer.stem(t) for t in tokens]
+            tokens = [self.stemmer.stem(t) for t in tokens]
             text = ' '.join(tokens)
+        
         return text
-
+    
     def tokenize(self, text: str) -> List[str]:
         return self.clean_text(text).split()
 
-# نمونه آبجکت برای استفاده در سایر ماژول‌ها
-default_cleaner = TextCleaner()
+# Default instance
+default_cleaner = TextCleaner(remove_stopwords=True, stem=False)
 clean_text = default_cleaner.clean_text
 tokenize = default_cleaner.tokenize
