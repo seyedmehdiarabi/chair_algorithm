@@ -1,140 +1,117 @@
-import logging
 import torch
 from transformers import AutoTokenizer, AutoModelForQuestionAnswering
-from typing import Tuple, Optional, List
+from typing import Optional, Tuple, List, Dict, Any
+import logging
+from utils.error_handler import handle_errors, ModelError
 
 logger = logging.getLogger(__name__)
 
+
 class PersianQAE:
     """
-    استخراج پاسخ از متن با استفاده از مدل QA فارسی
+    Extractive Question Answering برای زبان فارسی با استفاده از مدل
+    m3hrdadfi/bert-fa-base-uncased-squad (fine-tuned روی PQuAD و PersianQA)
     """
-    def __init__(self, model_name="saman2000/bert-base-fa-qa"):
-        """
-        Args:
-            model_name: نام مدل QA فارسی (پیش‌فرض: saman2000/bert-base-fa-qa)
-        """
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model_name = model_name
-        self.is_loaded = False
-        
+
+    def __init__(
+        self,
+        model_name: str = "m3hrdadfi/bert-fa-base-uncased-squad",
+        device: Optional[str] = None,
+        max_length: int = 512,
+        stride: int = 128,
+        batch_size: int = 16
+    ):
+        self.device = device if device else ("cuda" if torch.cuda.is_available() else "cpu")
+        self.max_length = max_length
+        self.stride = stride
+        self.batch_size = batch_size
+
         try:
-            logger.info(f"Loading QA model: {model_name} ...")
+            logger.info(f"Loading QA model: {model_name} on {self.device}")
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
             self.model = AutoModelForQuestionAnswering.from_pretrained(model_name)
             self.model.to(self.device)
             self.model.eval()
-            self.is_loaded = True
-            logger.info(f"✅ QA model loaded: {model_name} on {self.device}")
+            self._available = True
+            logger.info("✅ QA model loaded successfully.")
         except Exception as e:
-            logger.warning(f"⚠️ Failed to load QA model '{model_name}': {e}")
-            logger.warning("Trying fallback model: HooshvareLab/bert-fa-base-uncased")
-            try:
-                # Fallback: استفاده از مدل پایه (بدون fine-tuning) - ممکن است عملکرد ضعیف‌تری داشته باشد
-                self.tokenizer = AutoTokenizer.from_pretrained("HooshvareLab/bert-fa-base-uncased")
-                self.model = AutoModelForQuestionAnswering.from_pretrained("HooshvareLab/bert-fa-base-uncased")
-                self.model.to(self.device)
-                self.model.eval()
-                self.is_loaded = True
-                logger.info("✅ QA model loaded with fallback: HooshvareLab/bert-fa-base-uncased")
-            except Exception as e2:
-                logger.error(f"❌ All QA models failed to load. QA will be disabled.")
-                self.is_loaded = False
-    
-    def extract_answer(self, question: str, context: str, 
-                      max_length: int = 512, 
-                      min_answer_len: int = 2) -> Tuple[Optional[str], float]:
-        """
-        استخراج پاسخ از متن
-        
-        Args:
-            question: سوال کاربر
-            context: متن زمینه (سند)
-            max_length: حداکثر طول توکن‌ها
-            min_answer_len: حداقل طول پاسخ بر حسب کاراکتر
-        
-        Returns:
-            tuple: (پاسخ استخراج‌شده، امتیاز اطمینان)
-        """
-        if not self.is_loaded:
-            return None, 0.0
-        
+            logger.warning(f"⚠️ QA model could not be loaded: {e}")
+            logger.warning("QA features will be disabled. Use --no-qa to suppress this warning.")
+            self._available = False
+            self.tokenizer = None
+            self.model = None
+
+    def is_available(self) -> bool:
+        return self._available
+
+    @handle_errors
+    def extract_answer(self, question: str, context: str) -> Tuple[str, float]:
+        if not self._available:
+            return "", 0.0
         if not question or not context:
-            return None, 0.0
-        
-        try:
-            inputs = self.tokenizer(
-                question,
-                context,
-                return_tensors="pt",
-                truncation=True,
-                max_length=max_length,
-                padding=True
-            )
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                start_logits = outputs.start_logits
-                end_logits = outputs.end_logits
-            
-            start_scores = torch.softmax(start_logits, dim=1)
-            end_scores = torch.softmax(end_logits, dim=1)
-            
-            start_idx = torch.argmax(start_scores, dim=1).item()
-            end_idx = torch.argmax(end_scores, dim=1).item()
-            
-            confidence = (start_scores[0, start_idx] * end_scores[0, end_idx]).item()
-            
-            if start_idx >= end_idx or (end_idx - start_idx) < 1:
-                return None, 0.0
-            
-            answer_tokens = inputs["input_ids"][0][start_idx:end_idx+1]
-            answer = self.tokenizer.decode(answer_tokens, skip_special_tokens=True)
-            
-            if len(answer.strip()) < min_answer_len:
-                return None, 0.0
-            
-            return answer.strip(), confidence
-            
-        except Exception as e:
-            logger.warning(f"QA extraction failed: {e}")
-            return None, 0.0
-    
-    def extract_batch(self, question: str, contexts: list, 
-                     top_k: int = 3) -> list:
-        """
-        استخراج پاسخ از چند متن و بازگرداندن بهترین نتایج
-        
-        Args:
-            question: سوال
-            contexts: لیست متون
-            top_k: تعداد نتایج برتر
-        
-        Returns:
-            list: لیست پاسخ‌ها با امتیاز
-        """
-        if not self.is_loaded:
-            return []
-        
-        results = []
-        for i, context in enumerate(contexts):
-            answer, confidence = self.extract_answer(question, context)
-            if answer:
-                results.append({
-                    "index": i,
-                    "answer": answer,
-                    "confidence": confidence,
-                    "context": context[:200] + "..." if len(context) > 200 else context
-                })
-        
-        results.sort(key=lambda x: x["confidence"], reverse=True)
-        return results[:top_k]
+            return "", 0.0
+
+        inputs = self.tokenizer(
+            question,
+            context,
+            return_tensors="pt",
+            truncation="only_second",
+            max_length=self.max_length,
+            stride=self.stride,
+            return_overflowing_tokens=True,
+            padding=True
+        )
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+
+        # اگر چندین پنجره وجود داشته باشد، بهترین را انتخاب می‌کنیم
+        # (برای سادگی، از پنجره اول استفاده می‌کنیم)
+        start_logits = outputs.start_logits[0]
+        end_logits = outputs.end_logits[0]
+
+        best_start = torch.argmax(start_logits)
+        best_end = torch.argmax(end_logits)
+
+        if best_start > best_end:
+            best_end = best_start + 1
+
+        input_ids = inputs["input_ids"][0]
+        answer_tokens = input_ids[best_start:best_end + 1]
+        answer = self.tokenizer.decode(answer_tokens, skip_special_tokens=True)
+
+        score = (torch.max(start_logits).item() + torch.max(end_logits).item()) / 2
+
+        return answer.strip(), float(score)
+
+    @handle_errors
+    def extract_from_candidates(self, question: str, candidates: List[Dict[str, Any]], top_k: int = 5) -> List[Dict[str, Any]]:
+        if not self._available or not candidates:
+            return candidates
+
+        candidates = candidates[:top_k]
+        for item in candidates:
+            context = item.get('context', '')
+            if not context:
+                # اگر context موجود نبود، از ترکیب سوال و پاسخ استفاده می‌کنیم (اما دقیق نیست)
+                context = item.get('question', '') + " " + item.get('answer', '')
+            if context:
+                answer, score = self.extract_answer(question, context)
+                item['extracted_answer'] = answer
+                item['qa_score'] = score
+            else:
+                item['extracted_answer'] = ""
+                item['qa_score'] = 0.0
+
+        candidates.sort(key=lambda x: x.get('qa_score', 0), reverse=True)
+        return candidates
 
 
-# نمونه برای استفاده سریع - با مدیریت خطا
+# نمونه برای استفاده (در صورت موفقیت بارگذاری)
 try:
     default_qa = PersianQAE()
 except Exception as e:
-    logger.error(f"Could not initialize default QA: {e}")
+    import logging
+    logging.warning(f"QA model could not be loaded: {e}. QA features will be disabled.")
     default_qa = None

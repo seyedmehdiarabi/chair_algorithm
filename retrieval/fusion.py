@@ -20,8 +20,8 @@ class HybridRetriever:
     
     @handle_errors
     @log_execution_time
-    def search(self, query, k=5, initial_k=50,   # افزایش از ۲۰ به ۵۰
-               bm25_weight=0.6, sem_weight=0.4, 
+    def search(self, query, k=5, initial_k=200,   # ← افزایش از ۵۰ به ۲۰۰
+               bm25_weight=0.4, sem_weight=0.6,    # ← تغییر وزن به نفع Semantic
                use_reranker=False):
         bm25_results = self.bm25.search(query, k=initial_k)
         semantic_results = self.semantic.search(query, k=initial_k)
@@ -53,6 +53,7 @@ class HybridRetriever:
                 "answer": item.get("answer", ""),
                 "category": item.get("category", ""),
                 "specialty": item.get("specialty", ""),
+                "context": item.get("context", ""),  # ← اضافه کردن context
                 "fusion_score": scores[idx]
             })
         
@@ -65,7 +66,7 @@ class HybridRetriever:
     
     @handle_errors
     @log_execution_time
-    def search_with_weights(self, query, k=5, alpha=0.6, initial_k=50):  # افزایش initial_k
+    def search_with_weights(self, query, k=5, alpha=0.4, initial_k=200):  # ← α کمتر = وزن بیشتر Semantic
         bm25_results = self.bm25.search(query, k=initial_k)
         semantic_results = self.semantic.search(query, k=initial_k)
         
@@ -106,6 +107,7 @@ class HybridRetriever:
                 "answer": item.get("answer", ""),
                 "category": item.get("category", ""),
                 "specialty": item.get("specialty", ""),
+                "context": item.get("context", ""),  # ← اضافه کردن context
                 "final_score": float(final_score),
                 "bm25_score": data["bm25_score"],
                 "semantic_score": data["semantic_score"]

@@ -1,0 +1,2734 @@
+================================================================================
+EXPORTED PYTHON CODE FILES
+Total files: 23
+================================================================================
+
+File: app.py
+--------------------------------------------------------------------------------
+import streamlit as st
+import json
+import os
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from datetime import datetime
+from pathlib import Path
+import numpy as np
+import re
+
+# ========== تنظیمات صفحه ==========
+st.set_page_config(
+    page_title="🔍 Intelligent Retrieval Dashboard",
+    page_icon="🔍",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ========== استایل CSS سفارشی ==========
+st.markdown("""
+<style>
+    /* فونت و رنگ‌بندی اصلی */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    * {
+        font-family: 'Inter', sans-serif;
+    }
+    .main-header {
+        font-size: 2.8rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: center;
+        padding: 1rem 0 0.5rem 0;
+        letter-spacing: -0.5px;
+    }
+    .sub-header {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #2c3e50;
+        border-bottom: 3px solid #667eea;
+        padding-bottom: 0.5rem;
+        margin: 1.5rem 0 1rem 0;
+    }
+    .query-box {
+        background: linear-gradient(135deg, #f0f4ff 0%, #e8edf5 100%);
+        padding: 1.2rem 2rem;
+        border-radius: 16px;
+        border-left: 6px solid #667eea;
+        margin: 1rem 0 2rem 0;
+        font-size: 1.2rem;
+        font-weight: 500;
+        color: #1a1a2e;
+        box-shadow: 0 2px 12px rgba(102,126,234,0.15);
+    }
+    .result-card {
+        background: white;
+        border-radius: 16px;
+        padding: 1.2rem 1.5rem;
+        margin: 0.8rem 0;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        border-left: 5px solid #667eea;
+        transition: all 0.2s ease;
+        height: 100%;
+    }
+    .result-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 30px rgba(102,126,234,0.18);
+    }
+    .result-card .rank {
+        font-weight: 700;
+        color: #667eea;
+        font-size: 1.1rem;
+    }
+    .result-card .question {
+        font-weight: 600;
+        color: #1a1a2e;
+        margin: 0.3rem 0;
+    }
+    .result-card .answer {
+        color: #4a4a6a;
+        font-size: 0.95rem;
+        margin: 0.3rem 0;
+    }
+    .result-card .score {
+        font-weight: 700;
+        margin-top: 0.5rem;
+    }
+    .score-high { color: #27ae60; }
+    .score-medium { color: #f39c12; }
+    .score-low { color: #e74c3c; }
+    .category-tag {
+        display: inline-block;
+        background: #eef2ff;
+        color: #4f46e5;
+        padding: 0.2rem 0.8rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
+    .metric-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.2rem 1rem;
+        border-radius: 16px;
+        text-align: center;
+        box-shadow: 0 4px 20px rgba(102,126,234,0.3);
+    }
+    .metric-box h3 {
+        font-size: 2.2rem;
+        font-weight: 700;
+        margin: 0;
+    }
+    .metric-box p {
+        margin: 0.2rem 0 0;
+        font-size: 0.85rem;
+        opacity: 0.9;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px;
+        background: #f8fafc;
+        border-radius: 12px;
+        padding: 4px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 10px;
+        padding: 0.6rem 1.5rem;
+        font-weight: 500;
+        color: #475569;
+        transition: all 0.2s;
+    }
+    .stTabs [aria-selected="true"] {
+        background: #667eea !important;
+        color: white !important;
+        box-shadow: 0 2px 10px rgba(102,126,234,0.3);
+    }
+    .sidebar-header {
+        font-size: 1.3rem;
+        font-weight: 600;
+        color: #1a1a2e;
+        margin-bottom: 1.2rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .footer {
+        text-align: center;
+        color: #94a3b8;
+        font-size: 0.8rem;
+        margin-top: 3rem;
+        border-top: 1px solid #e2e8f0;
+        padding-top: 1.5rem;
+    }
+    /* تنظیمات برای نمایش بهتر در موبایل */
+    @media (max-width: 640px) {
+        .main-header { font-size: 2rem; }
+        .query-box { font-size: 1rem; padding: 0.8rem 1.2rem; }
+        .result-card { padding: 0.8rem 1rem; }
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ========== توابع کمکی ==========
+def load_sessions():
+    results_dir = Path("results")
+    if not results_dir.exists():
+        return []
+    sessions = []
+    for file in results_dir.rglob("session_*.json"):
+        try:
+            with open(file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                sessions.append({
+                    "file": str(file),
+                    "data": data,
+                    "timestamp": data.get("session_info", {}).get("timestamp", ""),
+                    "date": data.get("session_info", {}).get("date", ""),
+                    "time": data.get("session_info", {}).get("time", ""),
+                    "queries": len(data.get("queries", []))
+                })
+        except Exception:
+            continue
+    sessions.sort(key=lambda x: x["timestamp"], reverse=True)
+    return sessions
+
+def get_score(item):
+    return item.get("score", item.get("fusion_score", item.get("final_score", 0)))
+
+def get_score_class(score):
+    if score > 0.7:
+        return "score-high"
+    elif score > 0.4:
+        return "score-medium"
+    else:
+        return "score-low"
+
+def truncate(text, length=80):
+    if not text:
+        return ""
+    return text[:length] + ("..." if len(text) > length else "")
+
+def create_comparison_chart(results_dict, query):
+    methods = []
+    scores = []
+    for method_name, method_results in results_dict.items():
+        if method_results:
+            avg_score = np.mean([get_score(r) for r in method_results[:5]])
+            methods.append(method_name.upper().replace("_", " "))
+            scores.append(avg_score)
+    if not methods:
+        return go.Figure()
+    
+    colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe']
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=methods,
+        y=scores,
+        text=[f"{s:.4f}" for s in scores],
+        textposition='auto',
+        marker_color=colors[:len(methods)],
+        marker_line_color='rgba(0,0,0,0.08)',
+        marker_line_width=1,
+        opacity=0.9
+    ))
+    fig.update_layout(
+        title=f"📊 Average Score per Method — '{query[:40]}'",
+        xaxis_title="Method",
+        yaxis_title="Average Score",
+        height=400,
+        template="plotly_white",
+        font=dict(family="Inter, sans-serif", size=14),
+        hovermode='x',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=20, r=20, t=60, b=40)
+    )
+    return fig
+
+def create_distribution_chart(results_dict):
+    all_scores = []
+    for method_name, method_results in results_dict.items():
+        if method_results:
+            scores = [get_score(r) for r in method_results[:10]]
+            all_scores.extend(scores)
+    if not all_scores:
+        return go.Figure()
+    
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(
+        x=all_scores,
+        nbinsx=20,
+        marker_color='#667eea',
+        opacity=0.8,
+        name='Scores'
+    ))
+    fig.update_layout(
+        title="📈 Score Distribution (Top-10 per method)",
+        xaxis_title="Score",
+        yaxis_title="Frequency",
+        height=300,
+        template="plotly_white",
+        font=dict(family="Inter, sans-serif", size=14),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=20, r=20, t=50, b=30)
+    )
+    return fig
+
+def display_results_cards(results, method_name, emoji):
+    if not results:
+        st.warning(f"No results for {method_name}")
+        return
+    cols = st.columns(3)
+    for i, item in enumerate(results[:6]):
+        with cols[i % 3]:
+            score = get_score(item)
+            score_class = get_score_class(score)
+            category = item.get("category", "N/A")
+            st.markdown(f"""
+            <div class="result-card">
+                <div class="rank">#{i+1}</div>
+                <div class="question">❓ {truncate(item.get('question', 'N/A'), 60)}</div>
+                <div class="answer">💬 {truncate(item.get('answer', 'N/A'), 70)}</div>
+                <div style="margin-top:0.5rem;">
+                    <span class="category-tag">{category}</span>
+                    <span class="score {score_class}" style="float:right;">Score: {score:.4f}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+# ========== اپ اصلی ==========
+def main():
+    st.markdown('<div class="main-header">🔍 Intelligent Retrieval System</div>', unsafe_allow_html=True)
+
+    # ===== سایدبار =====
+    with st.sidebar:
+        st.markdown('<div class="sidebar-header">📂 Session Selector</div>', unsafe_allow_html=True)
+        sessions = load_sessions()
+        if not sessions:
+            st.warning("No sessions found. Please run `main.py` first!")
+            return
+
+        session_options = [f"{s['date']} {s['time']} — {s['queries']} queries" for s in sessions]
+        selected_idx = st.selectbox(
+            "Select Session",
+            range(len(session_options)),
+            format_func=lambda x: session_options[x]
+        )
+        selected_session = sessions[selected_idx]
+
+        st.markdown("---")
+        st.markdown("### 📊 Session Info")
+        st.markdown(f"**Date:** {selected_session['date']}")
+        st.markdown(f"**Time:** {selected_session['time']}")
+        st.markdown(f"**Total Queries:** {selected_session['queries']}")
+        st.markdown(f"**File:** `{os.path.basename(selected_session['file'])}`")
+
+        if st.button("🔄 Refresh Sessions", use_container_width=True):
+            st.rerun()
+
+    # ===== محتوای اصلی =====
+    data = selected_session['data']
+    queries = data.get('queries', [])
+    if not queries:
+        st.warning("No queries in this session")
+        return
+
+    # انتخاب کوئری
+    query_texts = [q['query'] for q in queries]
+    selected_query_idx = st.selectbox(
+        "🔍 Select Query",
+        range(len(query_texts)),
+        format_func=lambda x: f"Query {x+1}: {query_texts[x][:60]}..."
+    )
+
+    query_data = queries[selected_query_idx]
+    query = query_data['query']
+    results = query_data['results']
+
+    # نمایش کوئری
+    st.markdown(f'<div class="query-box">🔍 <b>Query:</b> {query}</div>', unsafe_allow_html=True)
+
+    # ===== تب‌ها =====
+    tabs = st.tabs(["📊 Overview", "📚 BM25", "🧠 Semantic", "🔄 Hybrid RRF", "⚖️ Weighted Hybrid"])
+
+    with tabs[0]:
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            fig1 = create_comparison_chart(results, query)
+            if fig1.data:
+                st.plotly_chart(fig1, use_container_width=True)
+            else:
+                st.info("No data for comparison chart.")
+        with col2:
+            fig2 = create_distribution_chart(results)
+            if fig2.data:
+                st.plotly_chart(fig2, use_container_width=True)
+            else:
+                st.info("No data for distribution chart.")
+
+        # متریک‌ها
+        c1, c2, c3, c4 = st.columns(4)
+        total_results = sum(len(r) for r in results.values())
+        all_scores = [get_score(r) for method_results in results.values() for r in method_results[:5]]
+        avg_score = np.mean(all_scores) if all_scores else 0
+        categories = set()
+        for method_results in results.values():
+            for r in method_results[:5]:
+                cat = r.get("category", "N/A")
+                if cat and cat != "N/A":
+                    categories.add(cat)
+        best_method = max(results.keys(), key=lambda x: 
+                         np.mean([get_score(r) for r in results.get(x, [])[:5]]) if results.get(x) else 0)
+
+        with c1:
+            st.markdown(f"""
+            <div class="metric-box">
+                <h3>{total_results}</h3>
+                <p>Total Results</p>
+            </div>
+            """, unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"""
+            <div class="metric-box">
+                <h3>{avg_score:.3f}</h3>
+                <p>Avg Score</p>
+            </div>
+            """, unsafe_allow_html=True)
+        with c3:
+            st.markdown(f"""
+            <div class="metric-box">
+                <h3>{len(categories)}</h3>
+                <p>Categories</p>
+            </div>
+            """, unsafe_allow_html=True)
+        with c4:
+            st.markdown(f"""
+            <div class="metric-box">
+                <h3>{best_method.upper().replace('_', ' ')}</h3>
+                <p>Best Method</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # نمایش نتایج هر روش
+    method_emojis = {
+        'bm25': '📚',
+        'semantic': '🧠',
+        'hybrid_rrf': '🔄',
+        'hybrid_weighted': '⚖️'
+    }
+    for i, (key, emoji) in enumerate(method_emojis.items(), 1):
+        with tabs[i]:
+            if key in results:
+                display_results_cards(results[key], key, emoji)
+            else:
+                st.warning(f"No results for {key.upper().replace('_', ' ')}")
+
+    # دکمه دانلود
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        json_str = json.dumps(query_data, ensure_ascii=False, indent=2)
+        st.download_button(
+            label="📥 Download Results (JSON)",
+            data=json_str,
+            file_name=f"query_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            mime="application/json",
+            use_container_width=True
+        )
+
+    st.markdown('<div class="footer">🔍 Intelligent Retrieval System — Built with ❤️ using Streamlit</div>', unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    main()
+================================================================================
+
+File: evaluation/build_ground_truth.py
+--------------------------------------------------------------------------------
+import json
+import random
+import logging
+import torch
+from sentence_transformers import CrossEncoder
+from retrieval.bm25 import BM25Retriever
+from retrieval.semantic import SemanticRetriever
+from retrieval.fusion import HybridRetriever
+
+logger = logging.getLogger(__name__)
+
+class GroundTruthBuilder:
+    def __init__(self, dataset, sample_size=300, k=10, threshold=0.5):
+        self.dataset = dataset
+        self.sample_size = min(sample_size, len(dataset))
+        self.k = k
+        self.threshold = threshold
+        
+        # مدل‌های اصلی برای استخراج کاندیداها (Pooling)
+        self.bm25 = BM25Retriever(dataset)
+        self.semantic = SemanticRetriever(dataset)
+        self.hybrid = HybridRetriever(self.bm25, self.semantic)
+        
+        # استفاده از Cross-Encoder به عنوان داور
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.cross_encoder = CrossEncoder(
+            'cross-encoder/ms-marco-MiniLM-L-6-v2',
+            max_length=512,
+            device=self.device
+        )
+        logger.info(f"Cross-Encoder loaded successfully on {self.device}")
+
+    def build(self):
+        logger.info(f"Building ground truth using Cross-Encoder scoring (Pooling method)...")
+        logger.info(f"Sample size: {self.sample_size}, k: {self.k}, threshold: {self.threshold}")
+        
+        # برای تکرارپذیری
+        random.seed(42)
+        
+        # نمونه‌گیری تصادفی
+        queries = random.sample(self.dataset, self.sample_size)
+        ground_truth = []
+
+        for i, item in enumerate(queries):
+            query = item.get("question", "")
+            if not query:
+                continue
+                
+            # 1. Pooling: گرفتن نتایج از همه مدل‌ها
+            candidate_indices = set()
+            
+            try:
+                for r in self.bm25.search(query, k=self.k):
+                    candidate_indices.add(r["index"])
+                for r in self.semantic.search(query, k=self.k):
+                    candidate_indices.add(r["index"])
+                for r in self.hybrid.search(query, k=self.k):
+                    candidate_indices.add(r["index"])
+            except Exception as e:
+                logger.warning(f"Error retrieving candidates for query {i}: {e}")
+                continue
+
+            if not candidate_indices:
+                ground_truth.append({"query": query, "relevant": []})
+                continue
+
+            # 2. ساخت لیست جفت‌ها برای Cross-Encoder
+            pairs = []
+            indices_list = list(candidate_indices)
+            
+            for idx in indices_list:
+                doc = self.dataset[idx]
+                doc_text = f"{doc.get('question', '')} {doc.get('answer', '')}"
+                # محدود کردن طول متن برای جلوگیری از overflow
+                if len(doc_text) > 1000:
+                    doc_text = doc_text[:1000]
+                pairs.append([query, doc_text])
+
+            # 3. امتیازدهی با Cross-Encoder با batch processing
+            try:
+                scores = self.cross_encoder.predict(pairs, convert_to_numpy=True, batch_size=32)
+            except Exception as e:
+                logger.warning(f"Cross-Encoder prediction failed for query {i}: {e}")
+                continue
+
+            # 4. انتخاب اسناد با امتیاز > threshold
+            relevant_indices = []
+            for idx, score in zip(indices_list, scores):
+                if score > self.threshold:
+                    relevant_indices.append(int(idx))
+
+            ground_truth.append({
+                "query": query,
+                "relevant": relevant_indices
+            })
+
+            if (i + 1) % 50 == 0:
+                logger.info(f"Ground truth progress: {i+1}/{self.sample_size}")
+
+        logger.info(f"Ground truth built with {len(ground_truth)} queries.")
+        return ground_truth
+
+    def save(self, path="evaluation/ground_truth.json"):
+        import os
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        data = self.build()
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info(f"Ground truth saved to {path}")
+        return data
+================================================================================
+
+File: evaluation/compare_models.py
+--------------------------------------------------------------------------------
+from evaluation.runner import EvaluationRunner
+from evaluation.build_ground_truth import GroundTruthBuilder
+import logging
+
+logger = logging.getLogger(__name__)
+
+def run_full_evaluation(dataset, sample_size=300, k=10):
+    """
+    اجرای کامل ارزیابی با ساخت ground truth از روش voting
+    """
+    logger.info("Starting full evaluation...")
+    gt_builder = GroundTruthBuilder(dataset, sample_size=sample_size, k=k)
+    ground_truth = gt_builder.build()
+
+    evaluator = EvaluationRunner(dataset)
+
+    logger.info("Evaluating BM25...")
+    bm25_scores = evaluator.evaluate_model(evaluator.bm25, ground_truth, k=k)
+
+    logger.info("Evaluating Semantic...")
+    semantic_scores = evaluator.evaluate_model(evaluator.semantic, ground_truth, k=k)
+
+    logger.info("Evaluating Hybrid...")
+    hybrid_scores = evaluator.evaluate_model(evaluator.hybrid, ground_truth, k=k)
+
+    logger.info("===== FINAL RESULTS =====")
+    logger.info(f"BM25:     {bm25_scores}")
+    logger.info(f"Semantic: {semantic_scores}")
+    logger.info(f"Hybrid:   {hybrid_scores}")
+
+    return {
+        "BM25": bm25_scores,
+        "Semantic": semantic_scores,
+        "Hybrid": hybrid_scores
+    }
+================================================================================
+
+File: evaluation/metrics.py
+--------------------------------------------------------------------------------
+import numpy as np
+
+def precision_at_k(relevant, retrieved, k):
+    if k <= 0:
+        return 0.0
+    retrieved_k = retrieved[:k]
+    hits = sum(1 for doc in retrieved_k if doc in relevant)
+    return hits / k
+
+def recall_at_k(relevant, retrieved, k):
+    if not relevant:
+        return 0.0
+    retrieved_k = retrieved[:k]
+    hits = sum(1 for doc in retrieved_k if doc in relevant)
+    return hits / len(relevant)
+
+def mean_reciprocal_rank(all_relevant, all_retrieved, k=10):
+    rr_sum = 0.0
+    for relevant, retrieved in zip(all_relevant, all_retrieved):
+        for i, doc in enumerate(retrieved[:k]):
+            if doc in relevant:
+                rr_sum += 1.0 / (i + 1)
+                break
+    return rr_sum / len(all_retrieved)
+
+def ndcg_at_k(relevant, retrieved, k):
+    def dcg(scores):
+        return sum((1 / np.log2(i + 2)) if rel else 0 for i, rel in enumerate(scores))
+    
+    rels = [1 if doc in relevant else 0 for doc in retrieved[:k]]
+    ideal_rels = sorted(rels, reverse=True)
+    dcg_val = dcg(rels)
+    idcg_val = dcg(ideal_rels)
+    if idcg_val == 0:
+        return 0.0
+    return dcg_val / idcg_val
+
+def average_precision(relevant, retrieved):
+    """
+    محاسبه Average Precision برای یک کوئری
+    
+    Args:
+        relevant: لیست ایندکس‌های مرتبط
+        retrieved: لیست ایندکس‌های بازیابی‌شده
+    
+    Returns:
+        float: امتیاز AP
+    """
+    if not relevant or not retrieved:
+        return 0.0
+    
+    hits = 0
+    sum_prec = 0.0
+    for i, doc in enumerate(retrieved):
+        if doc in relevant:
+            hits += 1
+            sum_prec += hits / (i + 1)
+    
+    return sum_prec / len(relevant)
+
+def map_at_k(all_relevant, all_retrieved, k=10):
+    """
+    محاسبه Mean Average Precision (MAP) در k
+    
+    Args:
+        all_relevant: لیست لیست‌های ایندکس‌های مرتبط
+        all_retrieved: لیست لیست‌های ایندکس‌های بازیابی‌شده
+        k: تعداد نتایج
+    
+    Returns:
+        float: امتیاز MAP@k
+    """
+    if not all_relevant or not all_retrieved:
+        return 0.0
+    
+    ap_scores = []
+    for relevant, retrieved in zip(all_relevant, all_retrieved):
+        ap = average_precision(relevant, retrieved[:k])
+        ap_scores.append(ap)
+    
+    return np.mean(ap_scores)
+
+def f1_score(precision, recall):
+    """
+    محاسبه F1-Score از Precision و Recall
+    """
+    if precision == 0 and recall == 0:
+        return 0.0
+    return 2 * precision * recall / (precision + recall)
+
+def f1_at_k(relevant, retrieved, k):
+    """
+    محاسبه F1-Score در k
+    """
+    prec = precision_at_k(relevant, retrieved, k)
+    rec = recall_at_k(relevant, retrieved, k)
+    return f1_score(prec, rec)
+================================================================================
+
+File: evaluation/runner.py
+--------------------------------------------------------------------------------
+from retrieval.bm25 import BM25Retriever
+from retrieval.semantic import SemanticRetriever
+from retrieval.fusion import HybridRetriever
+from evaluation.metrics import (
+    precision_at_k, recall_at_k, mean_reciprocal_rank, ndcg_at_k,
+    map_at_k, f1_at_k
+)
+import logging
+
+logger = logging.getLogger(__name__)
+
+class EvaluationRunner:
+    def __init__(self, dataset):
+        self.dataset = dataset
+        self.bm25 = BM25Retriever(dataset)
+        self.semantic = SemanticRetriever(dataset)
+        self.hybrid = HybridRetriever(self.bm25, self.semantic)
+
+    def evaluate_model(self, model, ground_truth, k=10):
+        all_relevant = []
+        all_retrieved = []
+        for item in ground_truth:
+            query = item["query"]
+            relevant = item["relevant"]
+            results = model.search(query, k=k)
+            retrieved = [r["index"] for r in results]
+            all_relevant.append(relevant)
+            all_retrieved.append(retrieved)
+
+        # محاسبه همه معیارها
+        prec = sum(precision_at_k(r, p, k) for r, p in zip(all_relevant, all_retrieved)) / len(ground_truth)
+        rec = sum(recall_at_k(r, p, k) for r, p in zip(all_relevant, all_retrieved)) / len(ground_truth)
+        mrr = mean_reciprocal_rank(all_relevant, all_retrieved, k)
+        ndcg = sum(ndcg_at_k(r, p, k) for r, p in zip(all_relevant, all_retrieved)) / len(ground_truth)
+        map_score = map_at_k(all_relevant, all_retrieved, k)
+        f1 = sum(f1_at_k(r, p, k) for r, p in zip(all_relevant, all_retrieved)) / len(ground_truth)
+
+        return {
+            "precision@k": prec,
+            "recall@k": rec,
+            "mrr@k": mrr,
+            "ndcg@k": ndcg,
+            "map@k": map_score,
+            "f1@k": f1
+        }
+================================================================================
+
+File: export_code.py
+--------------------------------------------------------------------------------
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+اسکریپت استخراج تمام کدهای Python پروژه در یک فایل متنی.
+فایل‌های .py در تمام زیرپوشه‌ها به جز پوشه‌های غیرضروری اسکن می‌شوند.
+نتیجه در فایل project_code_export.txt ذخیره می‌شود.
+"""
+
+import os
+import sys
+from pathlib import Path
+
+# پوشه‌هایی که نباید اسکن شوند
+EXCLUDE_DIRS = {
+    '__pycache__', '.venv', 'venv', 'env', 'cache', 'results', 'test_cache',
+    'node_modules', '.git', '.idea', '.vscode', '__pypackages__', 'dist',
+    'build', 'logs', 'temp', 'tmp', 'data', 'tests'  # tests را هم می‌توانید حذف کنید
+}
+
+# پسوندهای مجاز
+ALLOWED_EXTENSIONS = {'.py'}
+
+def should_exclude_dir(dir_path: Path) -> bool:
+    """بررسی می‌کند که آیا یک پوشه باید از اسکن حذف شود."""
+    dir_name = dir_path.name
+    if dir_name in EXCLUDE_DIRS:
+        return True
+    # پوشه‌هایی که با '.' شروع می‌شوند (مثل .git) را نیز حذف می‌کنیم
+    if dir_name.startswith('.'):
+        return True
+    return False
+
+def collect_py_files(root_dir: Path):
+    """همه فایل‌های .py را در زیرپوشه‌های مجاز جمع‌آوری می‌کند."""
+    py_files = []
+    for root, dirs, files in os.walk(root_dir):
+        # حذف پوشه‌های نامطلوب از لیست dirs تا وارد آن‌ها نشویم
+        dirs[:] = [d for d in dirs if not should_exclude_dir(Path(root) / d)]
+        for file in files:
+            if Path(file).suffix in ALLOWED_EXTENSIONS:
+                full_path = Path(root) / file
+                py_files.append(full_path)
+    return sorted(py_files)  # مرتب‌سازی بر اساس مسیر برای خوانایی بهتر
+
+def export_to_text(py_files: list, output_file: str = "project_code_export.txt"):
+    """فایل‌های پایتون را در یک فایل متنی با هدر و جداکننده می‌نویسد."""
+    with open(output_file, 'w', encoding='utf-8') as out:
+        out.write("=" * 80 + "\n")
+        out.write(f"EXPORTED PYTHON CODE FILES\n")
+        out.write(f"Total files: {len(py_files)}\n")
+        out.write("=" * 80 + "\n\n")
+
+        for py_file in py_files:
+            try:
+                rel_path = py_file.relative_to(Path.cwd())
+            except ValueError:
+                rel_path = py_file  # fallback
+
+            out.write(f"File: {rel_path}\n")
+            out.write("-" * 80 + "\n")
+            try:
+                with open(py_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                out.write(content)
+            except Exception as e:
+                out.write(f"!! ERROR reading file: {e}\n")
+            out.write("\n" + "=" * 80 + "\n\n")
+
+    print(f"✅ Export completed. Output saved to: {output_file}")
+
+def main():
+    root = Path.cwd()
+    if len(sys.argv) > 1:
+        root = Path(sys.argv[1])
+        if not root.is_dir():
+            print(f"❌ Error: '{root}' is not a valid directory.")
+            sys.exit(1)
+
+    print(f"📁 Scanning directory: {root}")
+    py_files = collect_py_files(root)
+    print(f"🔍 Found {len(py_files)} .py files.")
+
+    if not py_files:
+        print("⚠️ No Python files found. Nothing to export.")
+        return
+
+    output_file = "project_code_export.txt"
+    export_to_text(py_files, output_file)
+
+if __name__ == "__main__":
+    main()
+================================================================================
+
+File: load_dataset.py
+--------------------------------------------------------------------------------
+from datasets import load_dataset
+import os
+import json
+
+# مسیر پروژه
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(PROJECT_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# بارگذاری دیتاست
+print("در حال بارگذاری دیتاست PersianMedQA...")
+dataset = load_dataset("MohammadJRanjbar/PersianMedQA")
+
+# تبدیل به فرمت JSON سفارشی
+def convert_to_qa_format(examples):
+    """تبدیل داده به فرمت سوال-پاسخ"""
+    formatted_data = []
+    for i in range(len(examples['question'])):
+        question = examples['question'][i]
+        options = examples['options'][i]
+        answer_idx = examples['answer_idx'][i]
+        specialty = examples['specialty'][i]
+        
+        # ساخت پاسخ از گزینه صحیح
+        answer = options[answer_idx] if answer_idx < len(options) else ""
+        
+        # ساخت سوال کامل (با گزینه‌ها)
+        full_question = question + "\n" + "\n".join([f"{chr(65+j)}. {opt}" for j, opt in enumerate(options)])
+        
+        formatted_data.append({
+            "question": full_question,
+            "answer": answer,
+            "category": specialty
+        })
+    return formatted_data
+
+# تبدیل هر بخش
+train_data = convert_to_qa_format(dataset['train'])
+val_data = convert_to_qa_format(dataset['validation'])
+test_data = convert_to_qa_format(dataset['test'])
+
+# ذخیره به صورت JSON
+with open(os.path.join(DATA_DIR, "persianmedqa_train.json"), "w", encoding="utf-8") as f:
+    json.dump(train_data, f, ensure_ascii=False, indent=2)
+
+with open(os.path.join(DATA_DIR, "persianmedqa_val.json"), "w", encoding="utf-8") as f:
+    json.dump(val_data, f, ensure_ascii=False, indent=2)
+
+with open(os.path.join(DATA_DIR, "persianmedqa_test.json"), "w", encoding="utf-8") as f:
+    json.dump(test_data, f, ensure_ascii=False, indent=2)
+
+print(f"✅ دیتاست در پوشه {DATA_DIR} ذخیره شد")
+print(f"تعداد نمونه‌های آموزش: {len(train_data)}")
+print(f"تعداد نمونه‌های اعتبارسنجی: {len(val_data)}")
+print(f"تعداد نمونه‌های تست: {len(test_data)}")
+
+# نمونه از داده‌های ذخیره شده
+print("\nنمونه اول:")
+print(json.dumps(train_data[0], ensure_ascii=False, indent=2))
+================================================================================
+
+File: main.py
+--------------------------------------------------------------------------------
+import json
+import os
+import time
+import argparse
+import logging
+from pathlib import Path
+from retrieval.bm25 import BM25Retriever
+from retrieval.semantic import SemanticRetriever
+from retrieval.fusion import HybridRetriever
+from retrieval.query_expansion import QueryExpander
+from utils.logger import get_result_logger
+from utils.data_loader import DatasetLoader
+from utils.error_handler import DataError
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
+def find_dataset_files(data_dir="data"):
+    """پیدا کردن تمام فایل‌های JSON در پوشه داده"""
+    data_path = Path(data_dir)
+    if not data_path.exists():
+        return []
+    return sorted([f for f in data_path.glob("*.json") if f.is_file()])
+
+
+def select_dataset_file(data_dir="data"):
+    """انتخاب فایل دیتاست از بین گزینه‌های موجود"""
+    files = find_dataset_files(data_dir)
+    if not files:
+        logger.error(f"No JSON files found in '{data_dir}' directory.")
+        return None
+    
+    if len(files) == 1:
+        selected = files[0]
+        logger.info(f"Only one dataset found: {selected.name}")
+        return str(selected)
+    
+    print("\n📂 Available datasets:")
+    for i, f in enumerate(files, 1):
+        print(f"  {i}. {f.name}")
+    
+    while True:
+        try:
+            choice = input(f"\nSelect dataset (1-{len(files)}): ").strip()
+            if choice.isdigit():
+                idx = int(choice) - 1
+                if 0 <= idx < len(files):
+                    return str(files[idx])
+            print("Invalid choice. Please try again.")
+        except KeyboardInterrupt:
+            print("\nExiting...")
+            return None
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Intelligent Retrieval System")
+    parser.add_argument("--evaluate", action="store_true", help="Run evaluation after loading")
+    parser.add_argument("--data-size", type=int, default=None, help="Number of samples to use (None = all)")
+    parser.add_argument("--query", type=str, help="Single query to test (if not in interactive mode)")
+    parser.add_argument("--no-interactive", action="store_true", help="Skip interactive query input")
+    parser.add_argument("--index-type", choices=["flat", "ivf", "hnsw"], default="hnsw", 
+                        help="FAISS index type (hnsw recommended for large datasets)")
+    parser.add_argument("--no-reranker", action="store_true", 
+                        help="Disable reranker for faster search (recommended for production)")
+    parser.add_argument("--use-reranker", action="store_true", 
+                        help="Enable reranker (slower but potentially more accurate)")
+    parser.add_argument("--output-dir", type=str, default="results", 
+                        help="Directory to save results")
+    parser.add_argument("--data-file", type=str, default=None,
+                        help="Path to dataset file (if not provided, will auto-detect)")
+    args = parser.parse_args()
+
+    use_reranker = args.use_reranker and not args.no_reranker
+
+    logger.info("=" * 50)
+    logger.info("INTELLIGENT RETRIEVAL SYSTEM STARTED")
+    logger.info("=" * 50)
+
+    result_logger = get_result_logger()
+    logger.info(f"Results will be saved to: {result_logger.text_file}")
+
+    # ----- انتخاب فایل دیتاست -----
+    data_file = args.data_file
+    if data_file is None:
+        # اگر فایل مشخص نشده، ابتدا فایل‌های موجود را بررسی کن
+        data_file = select_dataset_file("data")
+        if data_file is None:
+            return
+    else:
+        # اگر فایل مشخص شده ولی وجود ندارد، خطا بده
+        if not Path(data_file).exists():
+            logger.error(f"Specified data file not found: {data_file}")
+            return
+
+    # ----- بارگذاری دیتاست -----
+    try:
+        data = DatasetLoader.load(data_file)
+        if data is None:
+            logger.error(f"Failed to load dataset from {data_file}: loader returned None")
+            return
+        logger.info(f"Loaded {len(data)} samples from {data_file}")
+    except Exception as e:
+        logger.error(f"Failed to load dataset: {e}")
+        return
+
+    if args.data_size is not None and args.data_size < len(data):
+        data = data[:args.data_size]
+    logger.info(f"Working data size: {len(data)}")
+
+    # ----- مقداردهی اولیه مدل‌ها -----
+    start_time = time.time()
+    try:
+        logger.info("Initializing BM25...")
+        bm25 = BM25Retriever(data, cache_dir="cache/bm25")
+
+        logger.info("Initializing Semantic Retriever...")
+        semantic = SemanticRetriever(
+            data,
+            cache_dir="cache/semantic",
+            model_name="HooshvareLab/bert-fa-base-uncased",
+            index_type=args.index_type
+        )
+
+        logger.info("Initializing Hybrid Retriever...")
+        hybrid = HybridRetriever(bm25, semantic)
+        
+        logger.info("Initializing Query Expander...")
+        expander = QueryExpander(use_wordnet=False)
+
+        logger.info(f"Initialization time: {time.time() - start_time:.2f} seconds")
+    except Exception as e:
+        logger.error(f"Error during initialization: {e}")
+        return
+
+    # ----- ارزیابی (اختیاری) -----
+    if args.evaluate:
+        try:
+            from evaluation.compare_models import run_full_evaluation
+            results = run_full_evaluation(data, sample_size=min(300, len(data)//2))
+            logger.info(f"Evaluation results: {results}")
+        except Exception as e:
+            logger.error(f"Evaluation failed: {e}")
+
+    # ----- دریافت کوئری -----
+    if args.query:
+        queries = [args.query]
+    else:
+        print("\n" + "=" * 50)
+        print("INTERACTIVE MODE - Enter your query (type 'exit' to quit)")
+        print("=" * 50)
+        try:
+            query = input("\nEnter your query: ").strip()
+            if not query:
+                logger.warning("Empty query received. Exiting...")
+                return
+            if query.lower() == 'exit':
+                logger.info("User requested exit")
+                return
+            queries = [query]
+        except KeyboardInterrupt:
+            logger.info("User interrupted")
+            return
+        except EOFError:
+            logger.error("No input available")
+            return
+
+    # ----- پردازش هر کوئری -----
+    for query in queries:
+        logger.info(f"\nQuery: {query}")
+        logger.info("=" * 50)
+        
+        # توسعه کوئری (اختیاری)
+        expanded_queries = expander.expand_with_synonyms(query, max_terms=3)
+        logger.info(f"Expanded queries: {expanded_queries}")
+        
+        results_dict = {}
+        
+        # BM25
+        try:
+            logger.info("\n========== BM25 RESULTS ==========")
+            start = time.time()
+            bm25_res = bm25.search(query, k=5)
+            logger.info(f"Search time: {time.time()-start:.4f}s")
+            print("\n" + "=" * 60)
+            print("BM25 RESULTS")
+            print("=" * 60)
+            for i, r in enumerate(bm25_res, 1):
+                print(f"{i}. Q: {r['question'][:80]}...")
+                print(f"   A: {r['answer'][:80]}...")
+                print(f"   Cat: {r.get('category','N/A')} Score: {r['score']:.4f}\n")
+            results_dict["bm25"] = bm25_res
+        except Exception as e:
+            logger.error(f"BM25 search failed: {e}")
+            results_dict["bm25"] = []
+
+        # Semantic
+        try:
+            logger.info("\n========== SEMANTIC RESULTS ==========")
+            start = time.time()
+            sem_res = semantic.search(query, k=5)
+            logger.info(f"Search time: {time.time()-start:.4f}s")
+            print("\n" + "=" * 60)
+            print("SEMANTIC RESULTS")
+            print("=" * 60)
+            for i, r in enumerate(sem_res, 1):
+                print(f"{i}. Q: {r['question'][:80]}...")
+                print(f"   A: {r['answer'][:80]}...")
+                print(f"   Cat: {r.get('category','N/A')} Score: {r['score']:.4f}\n")
+            results_dict["semantic"] = sem_res
+        except Exception as e:
+            logger.error(f"Semantic search failed: {e}")
+            results_dict["semantic"] = []
+
+        # Hybrid RRF
+        try:
+            logger.info(f"\n========== HYBRID (RRF{' with Reranker' if use_reranker else ''}) ==========")
+            start = time.time()
+            hybrid_res = hybrid.search(query, k=5, use_reranker=use_reranker)
+            logger.info(f"Search time: {time.time()-start:.4f}s")
+            score_key = "rerank_score" if use_reranker else "fusion_score"
+            print("\n" + "=" * 60)
+            print(f"HYBRID (RRF{' with Reranker' if use_reranker else ''}) RESULTS")
+            print("=" * 60)
+            for i, r in enumerate(hybrid_res, 1):
+                print(f"{i}. Q: {r['question'][:80]}...")
+                print(f"   A: {r['answer'][:80]}...")
+                print(f"   Cat: {r.get('category','N/A')} Score: {r.get(score_key,0):.4f}\n")
+            results_dict["hybrid_rrf"] = hybrid_res
+        except Exception as e:
+            logger.error(f"Hybrid RRF search failed: {e}")
+            results_dict["hybrid_rrf"] = []
+
+        # Weighted Hybrid
+        try:
+            logger.info("\n========== HYBRID (Weighted) ==========")
+            start = time.time()
+            weighted = hybrid.search_with_weights(query, k=5, alpha=0.6)
+            logger.info(f"Search time: {time.time()-start:.4f}s")
+            print("\n" + "=" * 60)
+            print("HYBRID (Weighted) RESULTS")
+            print("=" * 60)
+            for i, r in enumerate(weighted, 1):
+                print(f"{i}. Q: {r['question'][:80]}...")
+                print(f"   A: {r['answer'][:80]}...")
+                print(f"   Cat: {r.get('category','N/A')}")
+                print(f"   Final: {r['final_score']:.4f} BM25: {r['bm25_score']:.4f} Sem: {r['semantic_score']:.4f}\n")
+            results_dict["hybrid_weighted"] = weighted
+        except Exception as e:
+            logger.error(f"Weighted hybrid search failed: {e}")
+            results_dict["hybrid_weighted"] = []
+
+        # ذخیره نتایج
+        try:
+            result_logger.log_query(query, results_dict)
+            logger.info(f"Results saved to: {result_logger.text_file}")
+        except Exception as e:
+            logger.error(f"Failed to save results: {e}")
+
+        logger.info("\n" + "=" * 50)
+
+    logger.info("PROCESS COMPLETED")
+    logger.info(f"All results saved to: {result_logger.text_file}")
+    logger.info("=" * 50)
+
+
+if __name__ == "__main__":
+    main()
+================================================================================
+
+File: preprocessing/cleaner.py
+--------------------------------------------------------------------------------
+import re
+import hazm
+from typing import List, Optional
+
+class TextCleaner:
+    def __init__(self, remove_stopwords: bool = True, stem: bool = False):
+        self.normalizer = hazm.Normalizer()
+        self.stopwords = set(hazm.stopwords_list())
+        self.remove_stopwords = remove_stopwords
+        self.stem = stem
+        self.stemmer = hazm.Stemmer() if stem else None
+    
+    def clean_text(self, text: str) -> str:
+        """Clean and normalize Persian/English text"""
+        if not text:
+            return ""
+        
+        text = str(text)
+        # Normalize
+        text = self.normalizer.normalize(text)
+        # Remove extra spaces and punctuation
+        text = re.sub(r'[^\w\s]', ' ', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Remove stopwords if enabled
+        if self.remove_stopwords:
+            tokens = text.split()
+            tokens = [t for t in tokens if t not in self.stopwords]
+            text = ' '.join(tokens)
+        
+        # Stem if enabled
+        if self.stem and self.stemmer:
+            tokens = text.split()
+            tokens = [self.stemmer.stem(t) for t in tokens]
+            text = ' '.join(tokens)
+        
+        return text
+    
+    def tokenize(self, text: str) -> List[str]:
+        return self.clean_text(text).split()
+
+# Default instance
+default_cleaner = TextCleaner(remove_stopwords=True, stem=False)
+clean_text = default_cleaner.clean_text
+tokenize = default_cleaner.tokenize
+================================================================================
+
+File: ranking/ranker.py
+--------------------------------------------------------------------------------
+
+================================================================================
+
+File: retrieval/bm25.py
+--------------------------------------------------------------------------------
+import os
+import pickle
+import hashlib
+import numpy as np
+from rank_bm25 import BM25Okapi
+from preprocessing.cleaner import clean_text
+from utils.error_handler import handle_errors, log_execution_time, CacheError
+from utils.memory import chunk_list
+import logging
+from multiprocessing import Pool, cpu_count
+
+logger = logging.getLogger(__name__)
+
+def _process_item_for_bm25(item):
+    """پردازش یک آیتم برای ساخت corpus BM25 با اضافه کردن specialty و question_type"""
+    question = str(item.get("question", ""))
+    answer = str(item.get("answer", ""))
+    category = str(item.get("category", ""))
+    specialty = str(item.get("specialty", ""))          # <-- اضافه شد
+    question_type = str(item.get("question_type", ""))  # <-- اضافه شد (اختیاری)
+    # ترکیب تمام فیلدهای متنی
+    combined = f"{question} {answer} {category} {specialty} {question_type}"
+    return clean_text(combined)
+
+class BM25Retriever:
+    def __init__(self, dataset, cache_dir="cache/bm25"):
+        self.dataset = dataset
+        self.cache_dir = cache_dir
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        dataset_hash = self._hash_dataset()
+        self.corpus_file = os.path.join(cache_dir, f"corpus_{dataset_hash}.pkl")
+        self.bm25_file = os.path.join(cache_dir, f"bm25_{dataset_hash}.pkl")
+        
+        if self._load_from_cache():
+            logger.info("BM25 loaded from cache")
+        else:
+            logger.info("Building BM25 from scratch...")
+            self._build_from_scratch()
+            self._save_to_cache()
+            logger.info("BM25 built and cached")
+    
+    def _hash_dataset(self):
+        content = str([(item.get("question",""), item.get("answer",""), 
+                        item.get("specialty",""), item.get("question_type","")) 
+                       for item in self.dataset])
+        return hashlib.md5(content.encode('utf-8')).hexdigest()[:8]
+    
+    @log_execution_time
+    def _load_from_cache(self):
+        if all(os.path.exists(f) for f in [self.corpus_file, self.bm25_file]):
+            try:
+                with open(self.corpus_file, "rb") as f:
+                    self.corpus = pickle.load(f)
+                with open(self.bm25_file, "rb") as f:
+                    self.bm25 = pickle.load(f)
+                self.tokenized_corpus = [doc.split() for doc in self.corpus]
+                return True
+            except Exception as e:
+                logger.warning(f"Cache loading failed: {e}")
+                return False
+        return False
+    
+    def _save_to_cache(self):
+        try:
+            with open(self.corpus_file, "wb") as f:
+                pickle.dump(self.corpus, f)
+            with open(self.bm25_file, "wb") as f:
+                pickle.dump(self.bm25, f)
+            logger.info("BM25 cache saved.")
+        except Exception as e:
+            raise CacheError(f"Failed to save BM25 cache: {e}")
+    
+    @log_execution_time
+    def _build_from_scratch(self):
+        logger.info("Building BM25 corpus with multiprocessing...")
+        num_workers = max(1, cpu_count() - 1)
+        chunks = list(chunk_list(self.dataset, max(1000, len(self.dataset)//num_workers)))
+        
+        corpus = []
+        with Pool(processes=num_workers) as pool:
+            for chunk_result in pool.map(self._process_chunk, chunks):
+                corpus.extend(chunk_result)
+        
+        self.corpus = corpus
+        self.tokenized_corpus = [doc.split() for doc in self.corpus]
+        self.bm25 = BM25Okapi(self.tokenized_corpus)
+    
+    @staticmethod
+    def _process_chunk(chunk):
+        return [_process_item_for_bm25(item) for item in chunk]
+    
+    @handle_errors
+    @log_execution_time
+    def search(self, query, k=5):
+        query = clean_text(query)
+        tokens = query.split()
+        if not tokens:
+            logger.warning("Empty query after cleaning")
+            return []
+        
+        scores = np.array(self.bm25.get_scores(tokens))
+        top_indices = np.argsort(scores)[-k:][::-1]
+        
+        results = []
+        for idx in top_indices:
+            item = self.dataset[idx]
+            results.append({
+                "index": int(idx),
+                "question": item.get("question", ""),
+                "answer": item.get("answer", ""),
+                "category": item.get("category", ""),
+                "specialty": item.get("specialty", ""), 
+                "score": float(scores[idx])
+            })
+        return results
+================================================================================
+
+File: retrieval/fusion.py
+--------------------------------------------------------------------------------
+import numpy as np
+import logging
+from utils.error_handler import handle_errors, log_execution_time
+
+logger = logging.getLogger(__name__)
+
+class HybridRetriever:
+    def __init__(self, bm25, semantic):
+        self.bm25 = bm25
+        self.semantic = semantic
+        self._reranker = None
+    
+    @property
+    def reranker(self):
+        if self._reranker is None:
+            from retrieval.reranker import ContextAwareReranker
+            logger.info("Loading Reranker (lazy)...")
+            self._reranker = ContextAwareReranker(self.bm25.dataset)
+        return self._reranker
+    
+    @handle_errors
+    @log_execution_time
+    def search(self, query, k=5, initial_k=50,   # افزایش از ۲۰ به ۵۰
+               bm25_weight=0.6, sem_weight=0.4, 
+               use_reranker=False):
+        bm25_results = self.bm25.search(query, k=initial_k)
+        semantic_results = self.semantic.search(query, k=initial_k)
+        
+        scores = {}
+        for rank, item in enumerate(bm25_results):
+            idx = item.get("index")
+            if idx is not None:
+                scores[idx] = scores.get(idx, 0) + bm25_weight * (1.0 / (rank + 60))
+        for rank, item in enumerate(semantic_results):
+            idx = item.get("index")
+            if idx is not None:
+                scores[idx] = scores.get(idx, 0) + sem_weight * (1.0 / (rank + 60))
+        
+        bm25_indices = {r["index"] for r in bm25_results if "index" in r}
+        sem_indices = {r["index"] for r in semantic_results if "index" in r}
+        for idx in scores:
+            if idx in bm25_indices and idx in sem_indices:
+                scores[idx] *= 1.25
+        
+        sorted_indices = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)[:initial_k]
+        
+        candidates = []
+        for idx in sorted_indices:
+            item = self.bm25.dataset[idx]
+            candidates.append({
+                "index": idx,
+                "question": item.get("question", ""),
+                "answer": item.get("answer", ""),
+                "category": item.get("category", ""),
+                "specialty": item.get("specialty", ""),
+                "fusion_score": scores[idx]
+            })
+        
+        if use_reranker:
+            reranked = self.reranker.rerank(query, candidates)
+            return reranked[:k]
+        else:
+            candidates.sort(key=lambda x: x["fusion_score"], reverse=True)
+            return candidates[:k]
+    
+    @handle_errors
+    @log_execution_time
+    def search_with_weights(self, query, k=5, alpha=0.6, initial_k=50):  # افزایش initial_k
+        bm25_results = self.bm25.search(query, k=initial_k)
+        semantic_results = self.semantic.search(query, k=initial_k)
+        
+        bm25_scores = np.array([r.get("score", 0) for r in bm25_results])
+        semantic_scores = np.array([r.get("score", 0) for r in semantic_results])
+        
+        def normalize(scores):
+            if len(scores) == 0:
+                return np.array([])
+            if scores.max() == scores.min():
+                return np.full_like(scores, 0.5)
+            return (scores - scores.min()) / (scores.max() - scores.min())
+        
+        bm25_norm = normalize(bm25_scores)
+        semantic_norm = normalize(semantic_scores)
+        
+        combined = {}
+        for item, score in zip(bm25_results, bm25_norm):
+            idx = item.get("index")
+            if idx is not None:
+                combined[idx] = {"item": item, "bm25_score": float(score), "semantic_score": 0.0}
+        
+        for item, score in zip(semantic_results, semantic_norm):
+            idx = item.get("index")
+            if idx is not None:
+                if idx in combined:
+                    combined[idx]["semantic_score"] = float(score)
+                else:
+                    combined[idx] = {"item": item, "bm25_score": 0.0, "semantic_score": float(score)}
+        
+        final_results = []
+        for idx, data in combined.items():
+            item = data["item"]
+            final_score = alpha * data["bm25_score"] + (1 - alpha) * data["semantic_score"]
+            final_results.append({
+                "index": idx,
+                "question": item.get("question", ""),
+                "answer": item.get("answer", ""),
+                "category": item.get("category", ""),
+                "specialty": item.get("specialty", ""),
+                "final_score": float(final_score),
+                "bm25_score": data["bm25_score"],
+                "semantic_score": data["semantic_score"]
+            })
+        
+        final_results.sort(key=lambda x: x["final_score"], reverse=True)
+        return final_results[:k]
+================================================================================
+
+File: retrieval/prf.py
+--------------------------------------------------------------------------------
+import logging
+from typing import List, Dict, Any
+from collections import Counter
+from preprocessing.cleaner import clean_text
+
+logger = logging.getLogger(__name__)
+
+class PseudoRelevanceFeedback:
+    """
+    پیاده‌سازی بازخورد شبه‌ارتباطی (PRF) برای بهبود پرسش
+    """
+    
+    def __init__(self, bm25_retriever, top_k=5, expansion_terms=5):
+        """
+        Args:
+            bm25_retriever: نمونه از BM25Retriever
+            top_k: تعداد اسناد اول برای استخراج کلمات
+            expansion_terms: تعداد کلمات اضافه‌شده به پرسش
+        """
+        self.bm25 = bm25_retriever
+        self.top_k = top_k
+        self.expansion_terms = expansion_terms
+        self.stopwords = self._load_stopwords()
+    
+    def _load_stopwords(self):
+        """بارگذاری stopwords فارسی"""
+        return {
+            'و', 'به', 'از', 'با', 'برای', 'در', 'را', 'که', 'چه', 'چی',
+            'چگونه', 'چرا', 'کی', 'کجا', 'آیا', 'خواهم', 'خواهی', 'خواهد',
+            'باشم', 'باشی', 'باشد', 'هستم', 'هستی', 'است', 'ایم', 'اید',
+            'اند', 'شد', 'شو', 'شده', 'کرد', 'کن', 'کند', 'ده', 'دهد',
+            'گیر', 'گیرد', 'آورد', 'آورده', 'مثل', 'مانند', 'بر', 'روی'
+        }
+    
+    def extract_key_terms(self, documents: List[Dict]) -> List[str]:
+        """
+        استخراج کلمات کلیدی از اسناد
+        
+        Args:
+            documents: لیست اسناد بازیابی‌شده
+        
+        Returns:
+            لیست کلمات کلیدی به همراه وزن
+        """
+        term_freq = Counter()
+        
+        for doc in documents:
+            # ترکیب فیلدهای متنی
+            text = f"{doc.get('question', '')} {doc.get('answer', '')} {doc.get('category', '')} {doc.get('specialty', '')}"
+            text = clean_text(text)
+            tokens = text.split()
+            
+            # حذف stopwords
+            tokens = [t for t in tokens if t not in self.stopwords and len(t) > 2]
+            
+            # وزن‌دهی: کلمات در سوال اهمیت بیشتری دارند
+            question_tokens = clean_text(doc.get('question', '')).split()
+            for token in tokens:
+                weight = 2.0 if token in question_tokens else 1.0
+                term_freq[token] += weight
+        
+        # بازگرداندن کلمات با بیشترین تکرار
+        return [term for term, _ in term_freq.most_common(self.expansion_terms)]
+    
+    def expand_query(self, query: str) -> str:
+        """
+        گسترش پرسش با استفاده از بازخورد شبه‌ارتباطی
+        
+        Args:
+            query: پرسش اصلی
+        
+        Returns:
+            پرسش گسترش‌یافته
+        """
+        # بازیابی اولیه
+        initial_results = self.bm25.search(query, k=self.top_k)
+        
+        if not initial_results:
+            logger.warning("No initial results for PRF, returning original query")
+            return query
+        
+        # استخراج کلمات کلیدی
+        key_terms = self.extract_key_terms(initial_results)
+        
+        if not key_terms:
+            return query
+        
+        # ترکیب با پرسش اصلی (افزودن کلمات جدید)
+        expanded_query = query + " " + " ".join(key_terms)
+        logger.info(f"PRF expanded: '{query}' -> '{expanded_query}'")
+        
+        return expanded_query
+    
+    def expand_with_weights(self, query: str, alpha: float = 0.7) -> str:
+        """
+        گسترش پرسش با وزن‌دهی به کلمات جدید
+        
+        Args:
+            query: پرسش اصلی
+            alpha: وزن پرسش اصلی (0-1)
+        
+        Returns:
+            پرسش گسترش‌یافته با وزن‌دهی
+        """
+        initial_results = self.bm25.search(query, k=self.top_k)
+        
+        if not initial_results:
+            return query
+        
+        # استخراج کلمات با وزن
+        term_weights = {}
+        for doc in initial_results:
+            text = f"{doc.get('question', '')} {doc.get('answer', '')}"
+            text = clean_text(text)
+            tokens = text.split()
+            for token in tokens:
+                if token not in self.stopwords and len(token) > 2:
+                    term_weights[token] = term_weights.get(token, 0) + 1
+        
+        # مرتب‌سازی بر اساس وزن
+        sorted_terms = sorted(term_weights.items(), key=lambda x: x[1], reverse=True)
+        top_terms = [term for term, _ in sorted_terms[:self.expansion_terms]]
+        
+        # ترکیب وزنی
+        expanded = query
+        for term in top_terms:
+            if term not in query:
+                expanded += f" {term}"
+        
+        return expanded
+
+
+def get_prf_expander(bm25_retriever, top_k=5, expansion_terms=5):
+    return PseudoRelevanceFeedback(bm25_retriever, top_k, expansion_terms)
+================================================================================
+
+File: retrieval/qa_extractor.py
+--------------------------------------------------------------------------------
+import torch
+from transformers import AutoTokenizer, AutoModelForQuestionAnswering
+from typing import Optional, Tuple
+import logging
+from utils.error_handler import handle_errors, ModelError
+
+logger = logging.getLogger(__name__)
+
+
+class PersianQAE:
+    """
+    Extractive Question Answering برای زبان فارسی با استفاده از مدل
+    HooshvareLab/bert-fa-base-uncased-pquad (fine-tuned روی PQuAD)
+    """
+
+    def __init__(
+        self,
+        model_name: str = "HooshvareLab/bert-fa-base-uncased-pquad",
+        device: Optional[str] = None,
+        max_length: int = 512,
+        stride: int = 128
+    ):
+        """
+        Args:
+            model_name: نام مدل QA از HuggingFace
+            device: 'cuda' یا 'cpu' (اگر None باشد، خودکار تشخیص داده می‌شود)
+            max_length: حداکثر طول توکن‌های ورودی
+            stride: گام برای پنجره‌های overlapping در متون طولانی
+        """
+        self.device = device if device else ("cuda" if torch.cuda.is_available() else "cpu")
+        self.max_length = max_length
+        self.stride = stride
+
+        try:
+            logger.info(f"Loading QA model: {model_name} on {self.device}")
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModelForQuestionAnswering.from_pretrained(model_name)
+            self.model.to(self.device)
+            self.model.eval()
+            logger.info("✅ QA model loaded successfully.")
+        except Exception as e:
+            raise ModelError(f"Failed to load QA model: {e}")
+
+    @handle_errors
+    def extract_answer(self, question: str, context: str) -> Tuple[str, float]:
+        """
+        استخراج پاسخ از متن زمینه بر اساس پرسش
+
+        Args:
+            question: پرسش کاربر
+            context: متن زمینه (paragraph)
+
+        Returns:
+            (پاسخ استخراج‌شده، امتیاز اطمینان)
+        """
+        if not question or not context:
+            return "", 0.0
+
+        # توکن‌سازی با پنجره‌های overlapping برای متون طولانی
+        inputs = self.tokenizer(
+            question,
+            context,
+            return_tensors="pt",
+            truncation="only_second",
+            max_length=self.max_length,
+            stride=self.stride,
+            return_overflowing_tokens=True,
+            padding=True
+        )
+
+        # انتقال به دستگاه
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+
+        start_logits = outputs.start_logits
+        end_logits = outputs.end_logits
+
+        # اگر بیش از یک پنجره وجود داشته باشد، بهترین پنجره را انتخاب می‌کنیم
+        # (در اینجا ساده‌ترین حالت: استفاده از پنجره اول یا ترکیب)
+        # برای سادگی، از پنجره اول استفاده می‌کنیم
+        start_logits = start_logits[0]
+        end_logits = end_logits[0]
+
+        # پیدا کردن بهترین start و end با شرط start <= end
+        best_start = torch.argmax(start_logits)
+        best_end = torch.argmax(end_logits)
+
+        # اگر start > end، بازه را اصلاح می‌کنیم (معمولاً نباید اتفاق بیفتد)
+        if best_start > best_end:
+            best_end = best_start + 1
+
+        # استخراج توکن‌های پاسخ
+        input_ids = inputs["input_ids"][0]  # پنجره اول
+        answer_tokens = input_ids[best_start:best_end + 1]
+
+        # تبدیل به متن
+        answer = self.tokenizer.decode(answer_tokens, skip_special_tokens=True)
+
+        # محاسبه امتیاز اطمینان (میانگین logits start و end)
+        score = (torch.max(start_logits).item() + torch.max(end_logits).item()) / 2
+
+        return answer.strip(), float(score)
+
+    @handle_errors
+    def batch_extract(self, questions: list, contexts: list) -> list:
+        """
+        استخراج دسته‌ای پاسخ‌ها برای چند جفت (سوال، متن)
+
+        Args:
+            questions: لیست پرسش‌ها
+            contexts: لیست متن‌های زمینه
+
+        Returns:
+            لیست تاپل‌های (پاسخ، امتیاز)
+        """
+        results = []
+        for q, c in zip(questions, contexts):
+            answer, score = self.extract_answer(q, c)
+            results.append((answer, score))
+        return results
+
+
+default_qa = PersianQAE()
+================================================================================
+
+File: retrieval/query_expansion.py
+--------------------------------------------------------------------------------
+import logging
+from typing import List, Optional
+from utils.error_handler import handle_errors
+
+logger = logging.getLogger(__name__)
+
+class QueryExpander:
+    """Query expansion using synonyms and embeddings"""
+    
+    def __init__(self, use_wordnet=True):
+        self.use_wordnet = use_wordnet
+        self.wordnet = None
+        if use_wordnet:
+            try:
+                import nltk
+                nltk.download('wordnet', quiet=True)
+                from nltk.corpus import wordnet
+                self.wordnet = wordnet
+                logger.info("WordNet loaded for query expansion")
+            except ImportError:
+                logger.warning("NLTK not installed. WordNet expansion disabled.")
+                self.use_wordnet = False
+    
+    @handle_errors
+    def expand_with_synonyms(self, query: str, max_terms: int = 5) -> List[str]:
+        """Expand query with synonyms from WordNet"""
+        if not self.use_wordnet or not self.wordnet:
+            return [query]
+        
+        tokens = query.split()
+        expanded = set([query])
+        
+        for token in tokens:
+            synsets = self.wordnet.synsets(token)
+            for synset in synsets[:2]:
+                for lemma in synset.lemmas()[:3]:
+                    if lemma.name() != token:
+                        expanded.add(lemma.name().replace('_', ' '))
+                        if len(expanded) >= max_terms + 1:
+                            return list(expanded)
+        
+        return list(expanded)
+    
+    @handle_errors
+    def expand_with_embeddings(self, query: str, semantic_retriever, top_k: int = 3) -> List[str]:
+        """Expand query using top retrieved documents' content"""
+        try:
+            results = semantic_retriever.search(query, k=top_k)
+            terms = []
+            for r in results:
+                q = r.get('question', '')
+                if q:
+                    terms.extend(q.split()[:5])
+            if terms:
+                return list(set([query] + terms))
+            return [query]
+        except Exception as e:
+            logger.warning(f"Embedding-based expansion failed: {e}")
+            return [query]
+================================================================================
+
+File: retrieval/reranker.py
+--------------------------------------------------------------------------------
+import os
+import pickle
+import hashlib
+import torch
+import torch.nn.functional as F
+from transformers import AutoTokenizer, AutoModel
+from preprocessing.cleaner import clean_text
+from utils.error_handler import handle_errors, log_execution_time, ModelError
+from utils.memory import get_optimal_batch_size, chunk_list
+import logging
+import numpy as np
+from typing import List, Dict, Any
+
+logger = logging.getLogger(__name__)
+
+class ContextAwareReranker:
+    def __init__(self, dataset, cache_dir="cache/reranker", use_mmap=True):
+        self.dataset = dataset
+        self.cache_dir = cache_dir
+        self.use_mmap = use_mmap
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # استفاده از مدل فارسی برای Reranker
+        model_name = "HooshvareLab/bert-fa-base-uncased"  # ← مدل فارسی
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModel.from_pretrained(model_name)
+            self.model.to(self.device)
+            self.model.eval()
+            logger.info(f"✅ Reranker model loaded: {model_name} on {self.device}")
+        except Exception as e:
+            raise ModelError(f"Failed to load reranker model: {e}")
+        
+        dataset_hash = self._hash_dataset()
+        self.doc_emb_file = os.path.join(cache_dir, f"doc_emb_{dataset_hash}.npy")
+        self.doc_emb_meta_file = os.path.join(cache_dir, f"doc_emb_meta_{dataset_hash}.pkl")
+        self.doc_emb = self._load_or_build_embeddings()
+        logger.info(f"✅ Reranker ready with {len(self.doc_emb)} embeddings on {self.device}")
+    
+    def _hash_dataset(self):
+        content = str([(item.get("question",""), item.get("answer","")) for item in self.dataset])
+        return hashlib.md5(content.encode('utf-8')).hexdigest()[:8]
+    
+    @log_execution_time
+    def _load_or_build_embeddings(self):
+        if os.path.exists(self.doc_emb_file) and os.path.exists(self.doc_emb_meta_file):
+            try:
+                if self.use_mmap:
+                    embeddings = np.load(self.doc_emb_file, mmap_mode='r')
+                else:
+                    embeddings = np.load(self.doc_emb_file)
+                
+                with open(self.doc_emb_meta_file, "rb") as f:
+                    meta = pickle.load(f)
+                
+                if meta.get("dataset_size") == len(self.dataset):
+                    logger.info(f"Loaded {len(embeddings)} embeddings from cache")
+                    return embeddings
+            except Exception as e:
+                logger.warning(f"Failed to load embeddings cache: {e}")
+        
+        logger.info("Building document embeddings for reranker (Persian model)...")
+        embeddings = []
+        batch_size = get_optimal_batch_size(base_size=32, min_size=8)
+        
+        for batch in chunk_list(self.dataset, batch_size):
+            batch_texts = []
+            for item in batch:
+                doc = clean_text(
+                    str(item.get("question", "")) + " " +
+                    str(item.get("answer", "")) + " " +
+                    str(item.get("category", "")) + " " +
+                    str(item.get("specialty", ""))
+                )
+                batch_texts.append(doc)
+            
+            batch_embs = self._encode_batch(batch_texts)
+            embeddings.append(batch_embs)
+            
+            if len(embeddings) % 10 == 0:
+                logger.info(f"Reranker embedding: {len(embeddings)*batch_size}/{len(self.dataset)}")
+        
+        embeddings = np.vstack(embeddings) if embeddings else np.array([])
+        
+        np.save(self.doc_emb_file, embeddings)
+        with open(self.doc_emb_meta_file, "wb") as f:
+            pickle.dump({"dataset_size": len(self.dataset)}, f)
+        
+        logger.info(f"Saved {len(embeddings)} embeddings to cache")
+        return embeddings
+    
+    def _encode_batch(self, texts: List[str]) -> np.ndarray:
+        inputs = self.tokenizer(
+            texts,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=256
+        )
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            embeddings = outputs.last_hidden_state[:, 0, :]
+            embeddings = F.normalize(embeddings, p=2, dim=1)
+        
+        return embeddings.cpu().numpy()
+    
+    def encode(self, text: str) -> torch.Tensor:
+        inputs = self.tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=256
+        )
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            embedding = outputs.last_hidden_state[:, 0, :]
+            embedding = F.normalize(embedding, p=2, dim=1)
+        
+        return embedding
+    
+    @handle_errors
+    @log_execution_time
+    def rerank(self, query: str, candidates: List[Dict[str, Any]], batch_size: int = 16) -> List[Dict[str, Any]]:
+        if not candidates:
+            return candidates
+        
+        query_emb = self.encode(query)
+        reranked = []
+        
+        for batch in chunk_list(candidates, batch_size):
+            batch_indices = [item["index"] for item in batch]
+            
+            doc_embs = torch.tensor(
+                np.vstack([self.doc_emb[idx] for idx in batch_indices]),
+                device=self.device
+            )
+            
+            similarities = F.cosine_similarity(query_emb, doc_embs)
+            
+            for item, sim in zip(batch, similarities):
+                item["rerank_score"] = float(sim.item())
+                reranked.append(item)
+        
+        reranked.sort(key=lambda x: x["rerank_score"], reverse=True)
+        return reranked
+================================================================================
+
+File: retrieval/semantic.py
+--------------------------------------------------------------------------------
+import os
+import pickle
+import hashlib
+import numpy as np
+import torch
+from sentence_transformers import SentenceTransformer
+import faiss
+from preprocessing.cleaner import clean_text
+from utils.error_handler import handle_errors, log_execution_time, CacheError, ModelError
+from utils.memory import get_optimal_batch_size
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class SemanticRetriever:
+    def __init__(
+        self,
+        dataset,
+        cache_dir="cache/semantic",
+        model_name="HooshvareLab/bert-fa-base-uncased",  # ← تغییر به ParsBERT
+        index_type="hnsw"
+    ):
+        """
+        Semantic Retriever با استفاده از مدل ParsBERT برای زبان فارسی
+
+        Args:
+            dataset: لیست دیکشنری‌های داده
+            cache_dir: مسیر کش
+            model_name: نام مدل SentenceTransformer (پشتیبانی از ParsBERT)
+            index_type: نوع ایندکس FAISS (flat, ivf, hnsw)
+        """
+        self.dataset = dataset
+        self.cache_dir = cache_dir
+        self.model_name = model_name
+        self.index_type = index_type
+        os.makedirs(cache_dir, exist_ok=True)
+
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        # بارگذاری مدل SentenceTransformer با مدل فارسی
+        try:
+            # برای استفاده از مدل‌های BERT فارسی در SentenceTransformer،
+            # از مدل‌های از پیش ساخته شده یا تنظیم‌شده استفاده می‌کنیم.
+            # اگر مدل مستقیماً توسط SentenceTransformer پشتیبانی نشود،
+            # از transformers استفاده خواهیم کرد (در ادامه پیاده‌سازی شده).
+            self.model = SentenceTransformer(model_name, device=self.device)
+            logger.info(f"✅ Model loaded: {model_name} on {self.device}")
+        except Exception as e:
+            logger.warning(f"Failed to load with SentenceTransformer: {e}")
+            # Fallback به استفاده از transformers
+            self.model = self._load_with_transformers(model_name)
+
+        dataset_hash = self._hash_dataset()
+        self.embeddings_file = os.path.join(cache_dir, f"embeddings_{dataset_hash}.npy")
+        self.index_file = os.path.join(cache_dir, f"faiss_{dataset_hash}.index")
+        self.documents_file = os.path.join(cache_dir, f"documents_{dataset_hash}.pkl")
+        self.model_info_file = os.path.join(cache_dir, f"model_{dataset_hash}.txt")
+        self.index_type_file = os.path.join(cache_dir, f"index_type_{dataset_hash}.txt")
+
+        if self._load_cache():
+            logger.info("✅ Semantic cache loaded successfully")
+        else:
+            logger.info("🔄 Building semantic index from scratch...")
+            self._build()
+            self._save_cache()
+            logger.info("✅ Semantic index built and cached")
+
+    def _load_with_transformers(self, model_name):
+        """بارگذاری مدل با استفاده از transformers برای مدل‌های BERT فارسی"""
+        from transformers import AutoTokenizer, AutoModel
+        import torch.nn.functional as F
+
+        class CustomSentenceTransformer:
+            def __init__(self, model_name, device):
+                self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+                self.model = AutoModel.from_pretrained(model_name)
+                self.model.to(device)
+                self.model.eval()
+                self.device = device
+                self.max_length = 256
+
+            def encode(self, sentences, convert_to_numpy=True, normalize_embeddings=True, batch_size=32, show_progress_bar=False):
+                embeddings = []
+                for i in range(0, len(sentences), batch_size):
+                    batch = sentences[i:i+batch_size]
+                    inputs = self.tokenizer(
+                        batch,
+                        return_tensors="pt",
+                        truncation=True,
+                        padding=True,
+                        max_length=self.max_length
+                    )
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                    with torch.no_grad():
+                        outputs = self.model(**inputs)
+                        # استفاده از [CLS] token
+                        emb = outputs.last_hidden_state[:, 0, :]
+                        if normalize_embeddings:
+                            emb = F.normalize(emb, p=2, dim=1)
+                        embeddings.append(emb.cpu().numpy())
+                result = np.vstack(embeddings)
+                if convert_to_numpy:
+                    return result
+                return torch.tensor(result)
+
+        return CustomSentenceTransformer(model_name, self.device)
+
+    def _hash_dataset(self):
+        content = str([(item.get("question", ""), item.get("answer", "")) for item in self.dataset])
+        return hashlib.md5(content.encode('utf-8')).hexdigest()[:8]
+
+    @log_execution_time
+    def _load_cache(self):
+        files = [self.embeddings_file, self.index_file, self.documents_file]
+        if not all(os.path.exists(f) for f in files):
+            return False
+        try:
+            self.documents = pickle.load(open(self.documents_file, "rb"))
+            self.embeddings = np.load(self.embeddings_file)
+            self.index = faiss.read_index(self.index_file)
+
+            if self.device == "cuda" and hasattr(faiss, 'index_cpu_to_gpu'):
+                res = faiss.StandardGpuResources()
+                self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
+
+            if os.path.exists(self.index_type_file):
+                with open(self.index_type_file, "r") as f:
+                    saved_type = f.read().strip()
+                    if saved_type != self.index_type:
+                        logger.warning(f"Index type mismatch: cache has {saved_type}, requested {self.index_type}. Rebuilding...")
+                        return False
+            return True
+        except Exception as e:
+            logger.warning(f"Cache load failed: {e}")
+            return False
+
+    def _save_cache(self):
+        try:
+            if self.device == "cuda" and hasattr(self.index, 'get_device'):
+                if self.index.__class__.__name__.startswith('Gpu'):
+                    self.index = faiss.index_gpu_to_cpu(self.index)
+
+            np.save(self.embeddings_file, self.embeddings)
+            faiss.write_index(self.index, self.index_file)
+            pickle.dump(self.documents, open(self.documents_file, "wb"))
+
+            with open(self.model_info_file, "w") as f:
+                f.write(self.model_name)
+            with open(self.index_type_file, "w") as f:
+                f.write(self.index_type)
+            logger.info("✅ Semantic cache saved.")
+        except Exception as e:
+            raise CacheError(f"Failed to save semantic cache: {e}")
+
+    @log_execution_time
+    def _build(self):
+        self.documents = []
+        for i, item in enumerate(self.dataset):
+            if i % 1000 == 0:
+                logger.info(f"📄 Semantic preprocessing: {i}/{len(self.dataset)}")
+            question = str(item.get("question", ""))
+            answer = str(item.get("answer", ""))
+            category = str(item.get("category", ""))
+            specialty = str(item.get("specialty", ""))
+            text = clean_text(f"{question} {answer} {category} {specialty}")
+            self.documents.append(text)
+
+        logger.info(f"🧠 Encoding documents with {self.model_name}...")
+        batch_size = get_optimal_batch_size(base_size=128, min_size=32)  # کاهش batch size برای مدل‌های بزرگتر
+        self.embeddings = self.model.encode(
+            self.documents,
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+            batch_size=batch_size,
+            show_progress_bar=True
+        )
+        dimension = self.embeddings.shape[1]
+
+        # ساخت ایندکس FAISS
+        if self.index_type == "flat":
+            self.index = faiss.IndexFlatIP(dimension)
+        elif self.index_type == "ivf":
+            quantizer = faiss.IndexFlatIP(dimension)
+            self.index = faiss.IndexIVFFlat(quantizer, dimension, min(512, len(self.dataset) // 10))
+            self.index.train(self.embeddings)
+        else:  # hnsw (default)
+            self.index = faiss.IndexHNSWFlat(dimension, 64)
+            self.index.hnsw.efConstruction = 200
+
+        if self.device == "cuda" and hasattr(faiss, 'index_cpu_to_gpu'):
+            try:
+                res = faiss.StandardGpuResources()
+                self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
+                logger.info("🚀 FAISS index moved to GPU")
+            except Exception as e:
+                logger.warning(f"Could not move index to GPU: {e}")
+
+        self.index.add(self.embeddings)
+
+    @handle_errors
+    @log_execution_time
+    def search(self, query, k=5, expand_query=True, efSearch=128):
+        query = clean_text(query)
+        if expand_query and len(query.split()) <= 2:
+            # گسترش عمومی برای کوئری‌های بسیار کوتاه (قابل تنظیم)
+            query += " اطلاعات عمومی"
+
+        q_embedding = self.model.encode(
+            [query],
+            convert_to_numpy=True,
+            normalize_embeddings=True
+        )
+
+        if self.index_type == "hnsw" and hasattr(self.index, 'hnsw'):
+            self.index.hnsw.efSearch = efSearch
+
+        scores, ids = self.index.search(q_embedding, k)
+
+        results = []
+        for score, idx in zip(scores[0], ids[0]):
+            if idx < 0 or idx >= len(self.dataset):
+                continue
+            item = self.dataset[idx]
+            results.append({
+                "index": int(idx),
+                "question": item.get("question", ""),
+                "answer": item.get("answer", ""),
+                "category": item.get("category", ""),
+                "specialty": item.get("specialty", ""),
+                "score": float(score)
+            })
+        return results
+================================================================================
+
+File: run.py
+--------------------------------------------------------------------------------
+import subprocess
+import sys
+import os
+import threading
+import webbrowser
+import time
+
+def run_main():
+    subprocess.run([sys.executable, "main.py"] + sys.argv[1:])
+
+def run_dashboard():
+    time.sleep(2)
+    webbrowser.open("http://localhost:8501")
+    subprocess.run([sys.executable, "-m", "streamlit", "run", "app.py", "--server.port", "8501"])
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--dashboard":
+        webbrowser.open("http://localhost:8501")
+        subprocess.run([sys.executable, "-m", "streamlit", "run", "app.py"])
+    else:
+        print("🚀 Running main.py...")
+        main_thread = threading.Thread(target=run_main)
+        dashboard_thread = threading.Thread(target=run_dashboard)
+        main_thread.start()
+        dashboard_thread.start()
+        main_thread.join()
+================================================================================
+
+File: utils/data_loader.py
+--------------------------------------------------------------------------------
+import json
+import pandas as pd
+from pathlib import Path
+import logging
+from typing import List, Dict, Any, Optional
+from utils.error_handler import DataError, raise_errors
+
+logger = logging.getLogger(__name__)
+
+class DatasetLoader:
+    """Load datasets from various formats with automatic field detection"""
+    
+    SUPPORTED_FORMATS = ['.json', '.csv', '.xlsx', '.xls', '.parquet', '.tsv']
+    
+    @classmethod
+    @raise_errors  # استفاده از raise_errors به جای handle_errors
+    def load(cls, file_path: str, **kwargs) -> List[Dict[str, Any]]:
+        """Load dataset from file"""
+        path = Path(file_path)
+        
+        if not path.exists():
+            raise DataError(f"File not found: {file_path}")
+        
+        ext = path.suffix.lower()
+        if ext not in cls.SUPPORTED_FORMATS:
+            raise DataError(f"Unsupported format: {ext}. Supported: {cls.SUPPORTED_FORMATS}")
+        
+        logger.info(f"Loading dataset from {file_path}")
+        
+        if ext == '.json':
+            return cls._load_json(path, **kwargs)
+        elif ext in ['.csv', '.tsv']:
+            return cls._load_csv(path, **kwargs)
+        elif ext in ['.xlsx', '.xls']:
+            return cls._load_excel(path, **kwargs)
+        elif ext == '.parquet':
+            return cls._load_parquet(path, **kwargs)
+        else:
+            raise DataError(f"Unhandled format: {ext}")
+    
+    @staticmethod
+    def _load_json(path: Path, **kwargs) -> List[Dict]:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # If data is a dict, try to find the actual list
+        if isinstance(data, dict):
+            for key in ['data', 'items', 'documents', 'results', 'records']:
+                if key in data:
+                    data = data[key]
+                    break
+            else:
+                # Convert dict to list of items
+                data = [{'key': k, 'value': v} for k, v in data.items()]
+        
+        if not isinstance(data, list):
+            raise DataError("JSON root must be a list or object containing a list")
+        
+        return DatasetLoader._normalize_fields(data)
+    
+    @staticmethod
+    def _load_csv(path: Path, **kwargs) -> List[Dict]:
+        sep = kwargs.get('sep', '\t' if path.suffix == '.tsv' else ',')
+        df = pd.read_csv(path, sep=sep, encoding='utf-8')
+        return DatasetLoader._df_to_list(df)
+    
+    @staticmethod
+    def _load_excel(path: Path, **kwargs) -> List[Dict]:
+        df = pd.read_excel(path, engine='openpyxl')
+        return DatasetLoader._df_to_list(df)
+    
+    @staticmethod
+    def _load_parquet(path: Path, **kwargs) -> List[Dict]:
+        df = pd.read_parquet(path)
+        return DatasetLoader._df_to_list(df)
+    
+    @staticmethod
+    def _df_to_list(df: pd.DataFrame) -> List[Dict]:
+        """Convert DataFrame to list of dicts with standardized fields"""
+        columns = df.columns.tolist()
+        
+        # Detect best columns for question, answer, category
+        question_col = None
+        answer_col = None
+        category_col = None
+        
+        for col in columns:
+            col_lower = col.lower().strip()
+            if any(k in col_lower for k in ['question', 'query', 'text', 'title', 'content']):
+                if question_col is None:
+                    question_col = col
+            elif any(k in col_lower for k in ['answer', 'response', 'output', 'label']):
+                if answer_col is None:
+                    answer_col = col
+            elif any(k in col_lower for k in ['category', 'class', 'type', 'label']):
+                if category_col is None:
+                    category_col = col
+        
+        # Fallback: use first two columns as question/answer
+        if question_col is None and len(columns) > 0:
+            question_col = columns[0]
+        if answer_col is None and len(columns) > 1:
+            answer_col = columns[1]
+        
+        results = []
+        for _, row in df.iterrows():
+            item = {}
+            if question_col:
+                item['question'] = str(row[question_col]) if pd.notna(row[question_col]) else ""
+            if answer_col:
+                item['answer'] = str(row[answer_col]) if pd.notna(row[answer_col]) else ""
+            if category_col:
+                item['category'] = str(row[category_col]) if pd.notna(row[category_col]) else ""
+            
+            # Keep other columns as metadata
+            for col in columns:
+                if col not in [question_col, answer_col, category_col]:
+                    val = row[col]
+                    if pd.notna(val):
+                        item[col] = str(val) if not isinstance(val, (int, float, bool)) else val
+            results.append(item)
+        
+        return results
+    
+    @staticmethod
+    def _normalize_fields(data: List[Dict]) -> List[Dict]:
+        """Normalize field names: ensure 'question', 'answer', 'category' exist"""
+        normalized = []
+        for item in data:
+            new_item = {}
+            # Try to map fields
+            for key, value in item.items():
+                key_lower = key.lower().strip()
+                if any(k in key_lower for k in ['question', 'query', 'text', 'title']):
+                    new_item['question'] = str(value) if value else ""
+                elif any(k in key_lower for k in ['answer', 'response', 'output']):
+                    new_item['answer'] = str(value) if value else ""
+                elif any(k in key_lower for k in ['category', 'class', 'label']):
+                    new_item['category'] = str(value) if value else ""
+                else:
+                    new_item[key] = value
+            
+            # Ensure required fields exist
+            if 'question' not in new_item:
+                new_item['question'] = str(item.get('content', item.get('text', '')))
+            if 'answer' not in new_item:
+                new_item['answer'] = str(item.get('response', item.get('output', '')))
+            if 'category' not in new_item:
+                new_item['category'] = str(item.get('type', item.get('label', 'general')))
+            
+            normalized.append(new_item)
+        
+        return normalized
+================================================================================
+
+File: utils/error_handler.py
+--------------------------------------------------------------------------------
+import logging
+import traceback
+import time
+from functools import wraps
+
+logger = logging.getLogger(__name__)
+
+class RetrievalError(Exception):
+    """Base exception for retrieval errors"""
+    pass
+
+class CacheError(RetrievalError):
+    """Cache-related errors"""
+    pass
+
+class ModelError(RetrievalError):
+    """Model loading/inference errors"""
+    pass
+
+class DataError(RetrievalError):
+    """Data loading/validation errors"""
+    pass
+
+def handle_errors(func):
+    """Decorator to handle and log errors gracefully, returns None on error"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except RetrievalError as e:
+            logger.error(f"Retrieval error in {func.__name__}: {e}")
+            logger.debug(traceback.format_exc())
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error in {func.__name__}: {e}")
+            logger.debug(traceback.format_exc())
+            return None
+    return wrapper
+
+def raise_errors(func):
+    """Decorator to log errors but re-raise them (for critical operations)"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Critical error in {func.__name__}: {e}")
+            logger.debug(traceback.format_exc())
+            raise  # re-raise the exception
+    return wrapper
+
+def log_execution_time(func):
+    """Decorator to log execution time"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        elapsed = time.time() - start
+        logger.info(f"{func.__name__} executed in {elapsed:.2f}s")
+        return result
+    return wrapper
+
+def retry_on_failure(max_retries=3, delay=1):
+    """Decorator to retry on failure"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    logger.warning(f"Retry {attempt+1}/{max_retries} for {func.__name__}: {e}")
+                    time.sleep(delay)
+            return None
+        return wrapper
+    return decorator
+================================================================================
+
+File: utils/logger.py
+--------------------------------------------------------------------------------
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
+
+class ResultLogger:
+    """Log search results to JSON and text files"""
+    
+    def __init__(self, output_dir="results"):
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create session file
+        now = datetime.now()
+        self.session_id = now.strftime("%Y%m%d_%H%M%S")
+        self.session_file = self.output_dir / f"session_{self.session_id}.json"
+        self.text_file = self.output_dir / f"session_{self.session_id}.txt"
+        
+        self.session_data = {
+            "session_info": {
+                "timestamp": now.isoformat(),
+                "date": now.strftime("%Y-%m-%d"),
+                "time": now.strftime("%H:%M:%S"),
+                "session_id": self.session_id
+            },
+            "queries": []
+        }
+        
+        logger.info(f"Result logger initialized: {self.session_file}")
+    
+    def log_query(self, query: str, results: dict):
+        """Log a single query and its results"""
+        entry = {
+            "query": query,
+            "timestamp": datetime.now().isoformat(),
+            "results": {}
+        }
+        
+        # Convert any numpy/torch types to Python native
+        def convert_to_serializable(obj):
+            if hasattr(obj, 'item'):  # numpy/torch scalar
+                return obj.item()
+            if isinstance(obj, dict):
+                return {k: convert_to_serializable(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [convert_to_serializable(v) for v in obj]
+            return obj
+        
+        for method, res_list in results.items():
+            entry["results"][method] = convert_to_serializable(res_list)
+        
+        self.session_data["queries"].append(entry)
+        self._save()
+    
+    def _save(self):
+        """Save session data to JSON and generate text report"""
+        with open(self.session_file, 'w', encoding='utf-8') as f:
+            json.dump(self.session_data, f, ensure_ascii=False, indent=2)
+        
+        # Generate text report
+        self._save_text_report()
+    
+    def _save_text_report(self):
+        """Generate human-readable text report"""
+        with open(self.text_file, 'w', encoding='utf-8') as f:
+            f.write("="*80 + "\n")
+            f.write("SEARCH RESULTS REPORT\n")
+            f.write("="*80 + "\n\n")
+            f.write(f"Session: {self.session_id}\n")
+            f.write(f"Date: {self.session_data['session_info']['date']}\n")
+            f.write(f"Time: {self.session_data['session_info']['time']}\n")
+            f.write(f"Total queries: {len(self.session_data['queries'])}\n\n")
+            
+            for i, q_entry in enumerate(self.session_data['queries'], 1):
+                f.write(f"\n--- Query {i}: {q_entry['query']} ---\n")
+                for method, results in q_entry['results'].items():
+                    f.write(f"\n  Method: {method.upper()}\n")
+                    for j, r in enumerate(results[:5], 1):
+                        score = r.get('score', r.get('fusion_score', r.get('final_score', 0)))
+                        f.write(f"    {j}. Score: {score:.4f} | Q: {r.get('question', '')[:60]}...\n")
+
+_result_logger = None
+
+def get_result_logger():
+    global _result_logger
+    if _result_logger is None:
+        _result_logger = ResultLogger()
+    return _result_logger
+================================================================================
+
+File: utils/memory.py
+--------------------------------------------------------------------------------
+import psutil
+import torch
+import logging
+
+logger = logging.getLogger(__name__)
+
+def get_available_memory():
+    """Get available memory in bytes (GPU or RAM)"""
+    if torch.cuda.is_available():
+        return torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()
+    return psutil.virtual_memory().available
+
+def get_optimal_batch_size(base_size=512, min_size=32):
+    """Calculate optimal batch size based on available memory"""
+    available = get_available_memory()
+    if available < 1 * 1024**3:      # < 1GB
+        return min_size
+    elif available < 4 * 1024**3:    # < 4GB
+        return base_size // 2
+    elif available < 8 * 1024**3:    # < 8GB
+        return base_size
+    return base_size * 2
+
+def chunk_list(data, chunk_size):
+    """Split list into chunks"""
+    for i in range(0, len(data), chunk_size):
+        yield data[i:i + chunk_size]
+
+def memory_usage():
+    """Return current memory usage (GPU + RAM)"""
+    mem = {}
+    if torch.cuda.is_available():
+        mem['gpu_allocated'] = torch.cuda.memory_allocated() / 1024**3
+        mem['gpu_reserved'] = torch.cuda.memory_reserved() / 1024**3
+    mem['ram_used'] = psutil.virtual_memory().used / 1024**3
+    mem['ram_total'] = psutil.virtual_memory().total / 1024**3
+    return mem
+================================================================================
+
+File: view_results.py
+--------------------------------------------------------------------------------
+#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+from datetime import datetime
+from colorama import init, Fore, Style
+
+# فعال‌سازی رنگ در ترمینال
+init(autoreset=True)
+
+def print_header(text, char='='):
+    print(f"\n{Fore.CYAN}{Style.BRIGHT}{char*80}")
+    print(f"{Fore.YELLOW}{Style.BRIGHT}{text.center(80)}")
+    print(f"{Fore.CYAN}{Style.BRIGHT}{char*80}{Style.RESET_ALL}\n")
+
+def print_subheader(text):
+    print(f"{Fore.MAGENTA}{Style.BRIGHT}{text}{Style.RESET_ALL}")
+    print(f"{Fore.MAGENTA}{'-'*len(text)}{Style.RESET_ALL}")
+
+def view_results(file_path=None):
+    if file_path is None:
+        results_dir = Path("results")
+        if not results_dir.exists():
+            print(f"{Fore.RED}❌ No results directory found!{Style.RESET_ALL}")
+            return
+        sessions = list(results_dir.rglob("session_*.json"))
+        if not sessions:
+            print(f"{Fore.RED}❌ No session files found!{Style.RESET_ALL}")
+            return
+        sessions.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        file_path = sessions[0]
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        info = data.get("session_info", {})
+        print_header(f"📊 SESSION REPORT — {info.get('date', '')} {info.get('time', '')}")
+        print(f"{Fore.WHITE}📅 Date: {Fore.GREEN}{info.get('date', 'N/A')}")
+        print(f"{Fore.WHITE}⏰ Time: {Fore.GREEN}{info.get('time', 'N/A')}")
+        print(f"{Fore.WHITE}📝 Total Queries: {Fore.GREEN}{len(data.get('queries', []))}")
+        print(f"{Fore.WHITE}📁 File: {Fore.CYAN}{file_path}")
+
+        for i, q_entry in enumerate(data.get('queries', []), 1):
+            print_subheader(f"\n🔍 Query {i}: {q_entry['query']}")
+            results = q_entry.get('results', {})
+            
+            # نمایش هر روش
+            for method_name, method_results in results.items():
+                if not method_results:
+                    continue
+                
+                # انتخاب آیکون و رنگ
+                emoji = {
+                    'bm25': '📚', 'semantic': '🧠',
+                    'hybrid_rrf': '🔄', 'hybrid_weighted': '⚖️'
+                }.get(method_name, '📌')
+                
+                print(f"\n{Fore.YELLOW}{Style.BRIGHT}{emoji} {method_name.upper().replace('_', ' ')}{Style.RESET_ALL}")
+                print(f"{Fore.CYAN}{'─'*70}{Style.RESET_ALL}")
+                
+                for j, item in enumerate(method_results[:5], 1):
+                    score = item.get('score', item.get('fusion_score', item.get('final_score', 0)))
+                    if score > 0.7:
+                        score_color = Fore.GREEN
+                    elif score > 0.4:
+                        score_color = Fore.YELLOW
+                    else:
+                        score_color = Fore.RED
+                    
+                    q = item.get('question', 'N/A')[:60]
+                    a = item.get('answer', 'N/A')[:60]
+                    cat = item.get('category', 'N/A')
+                    
+                    print(f"  {Fore.WHITE}{j}. {Fore.CYAN}Q:{Fore.WHITE} {q}...")
+                    print(f"     {Fore.CYAN}A:{Fore.WHITE} {a}...")
+                    print(f"     {Fore.CYAN}Cat:{Fore.WHITE} {cat}  {Fore.CYAN}Score:{score_color} {score:.4f}")
+                    
+                    # نمایش امتیازات اضافی
+                    extra = []
+                    if 'bm25_score' in item:
+                        extra.append(f"BM25: {item['bm25_score']:.3f}")
+                    if 'semantic_score' in item:
+                        extra.append(f"Sem: {item['semantic_score']:.3f}")
+                    if 'rerank_score' in item:
+                        extra.append(f"Rerank: {item['rerank_score']:.3f}")
+                    if extra:
+                        print(f"     {Fore.MAGENTA}📈 {', '.join(extra)}")
+                    print()
+
+        print_header("✅ END OF REPORT")
+
+    except FileNotFoundError:
+        print(f"{Fore.RED}❌ File not found: {file_path}{Style.RESET_ALL}")
+    except json.JSONDecodeError:
+        print(f"{Fore.RED}❌ Invalid JSON file: {file_path}{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error: {e}{Style.RESET_ALL}")
+
+def list_sessions():
+    results_dir = Path("results")
+    if not results_dir.exists():
+        print(f"{Fore.RED}❌ No results directory found!{Style.RESET_ALL}")
+        return
+    sessions = list(results_dir.rglob("session_*.json"))
+    if not sessions:
+        print(f"{Fore.RED}❌ No session files found!{Style.RESET_ALL}")
+        return
+    sessions.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    
+    print_header("📂 AVAILABLE SESSIONS")
+    for i, file in enumerate(sessions, 1):
+        try:
+            with open(file, "r") as f:
+                data = json.load(f)
+                info = data.get('session_info', {})
+                date = info.get('date', 'N/A')
+                time = info.get('time', 'N/A')
+                queries = len(data.get('queries', []))
+                print(f"  {Fore.GREEN}{i:2d}.{Fore.WHITE} {date} {time}  —  {Fore.CYAN}{queries} queries{Fore.WHITE}  ({file.name})")
+        except:
+            print(f"  {Fore.RED}{i:2d}.{Fore.WHITE} {file.name} (corrupted)")
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ["--list", "-l"]:
+            list_sessions()
+        else:
+            view_results(sys.argv[1])
+    else:
+        view_results()
+================================================================================
+

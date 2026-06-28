@@ -12,14 +12,16 @@ from multiprocessing import Pool, cpu_count
 logger = logging.getLogger(__name__)
 
 def _process_item_for_bm25(item):
-    """پردازش یک آیتم برای ساخت corpus BM25 با اضافه کردن specialty و question_type"""
+    """پردازش یک آیتم برای ساخت corpus BM25 با اضافه کردن specialty, question_type و context"""
     question = str(item.get("question", ""))
     answer = str(item.get("answer", ""))
     category = str(item.get("category", ""))
-    specialty = str(item.get("specialty", ""))          # <-- اضافه شد
-    question_type = str(item.get("question_type", ""))  # <-- اضافه شد (اختیاری)
-    # ترکیب تمام فیلدهای متنی
-    combined = f"{question} {answer} {category} {specialty} {question_type}"
+    specialty = str(item.get("specialty", ""))
+    question_type = str(item.get("question_type", ""))
+    context = str(item.get("context", ""))          # <-- اضافه شد (برای PQuAD)
+    
+    # ترکیب تمام فیلدهای متنی (با اولویت context)
+    combined = f"{question} {answer} {category} {specialty} {question_type} {context}"
     return clean_text(combined)
 
 class BM25Retriever:
@@ -42,8 +44,8 @@ class BM25Retriever:
     
     def _hash_dataset(self):
         content = str([(item.get("question",""), item.get("answer",""), 
-                        item.get("specialty",""), item.get("question_type","")) 
-                       for item in self.dataset])
+                        item.get("specialty",""), item.get("question_type",""),
+                        item.get("context","")) for item in self.dataset])
         return hashlib.md5(content.encode('utf-8')).hexdigest()[:8]
     
     @log_execution_time
@@ -110,7 +112,8 @@ class BM25Retriever:
                 "question": item.get("question", ""),
                 "answer": item.get("answer", ""),
                 "category": item.get("category", ""),
-                "specialty": item.get("specialty", ""), 
+                "specialty": item.get("specialty", ""),
+                "context": item.get("context", ""),  # <-- اضافه شد
                 "score": float(scores[idx])
             })
         return results

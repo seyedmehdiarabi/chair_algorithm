@@ -20,7 +20,6 @@ st.set_page_config(
 # ========== استایل CSS سفارشی ==========
 st.markdown("""
 <style>
-    /* فونت و رنگ‌بندی اصلی */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     * {
         font-family: 'Inter', sans-serif;
@@ -54,6 +53,30 @@ st.markdown("""
         color: #1a1a2e;
         box-shadow: 0 2px 12px rgba(102,126,234,0.15);
     }
+    .best-answer-card {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        padding: 1.5rem 2rem;
+        border-radius: 16px;
+        margin: 1rem 0 2rem 0;
+        color: white;
+        box-shadow: 0 4px 20px rgba(16,185,129,0.3);
+    }
+    .best-answer-card .label {
+        font-size: 0.9rem;
+        font-weight: 500;
+        opacity: 0.9;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .best-answer-card .answer {
+        font-size: 2rem;
+        font-weight: 700;
+        margin: 0.5rem 0;
+    }
+    .best-answer-card .meta {
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
     .result-card {
         background: white;
         border-radius: 16px;
@@ -82,6 +105,15 @@ st.markdown("""
         color: #4a4a6a;
         font-size: 0.95rem;
         margin: 0.3rem 0;
+    }
+    .result-card .extracted-answer {
+        background: #ecfdf5;
+        border-radius: 8px;
+        padding: 0.5rem 0.8rem;
+        margin: 0.5rem 0;
+        border-left: 4px solid #10b981;
+        font-weight: 500;
+        color: #065f46;
     }
     .result-card .score {
         font-weight: 700;
@@ -152,11 +184,11 @@ st.markdown("""
         border-top: 1px solid #e2e8f0;
         padding-top: 1.5rem;
     }
-    /* تنظیمات برای نمایش بهتر در موبایل */
     @media (max-width: 640px) {
         .main-header { font-size: 2rem; }
         .query-box { font-size: 1rem; padding: 0.8rem 1.2rem; }
         .result-card { padding: 0.8rem 1rem; }
+        .best-answer-card .answer { font-size: 1.5rem; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -203,7 +235,10 @@ def truncate(text, length=80):
 def create_comparison_chart(results_dict, query):
     methods = []
     scores = []
+    # skip 'best_answer' if present
     for method_name, method_results in results_dict.items():
+        if method_name == "best_answer":
+            continue
         if method_results:
             avg_score = np.mean([get_score(r) for r in method_results[:5]])
             methods.append(method_name.upper().replace("_", " "))
@@ -240,6 +275,8 @@ def create_comparison_chart(results_dict, query):
 def create_distribution_chart(results_dict):
     all_scores = []
     for method_name, method_results in results_dict.items():
+        if method_name == "best_answer":
+            continue
         if method_results:
             scores = [get_score(r) for r in method_results[:10]]
             all_scores.extend(scores)
@@ -277,11 +314,17 @@ def display_results_cards(results, method_name, emoji):
             score = get_score(item)
             score_class = get_score_class(score)
             category = item.get("category", "N/A")
+            
+            # نمایش پاسخ استخراج شده (اگر وجود داشته باشد)
+            extracted = item.get("extracted_answer", "")
+            qa_score = item.get("qa_score", None)
+            
             st.markdown(f"""
             <div class="result-card">
                 <div class="rank">#{i+1}</div>
                 <div class="question">❓ {truncate(item.get('question', 'N/A'), 60)}</div>
                 <div class="answer">💬 {truncate(item.get('answer', 'N/A'), 70)}</div>
+                {f'<div class="extracted-answer">✅ <b>پاسخ دقیق:</b> {truncate(extracted, 80)}' + (f' (امتیاز QA: {qa_score:.3f})' if qa_score is not None else '') + '</div>' if extracted else ''}
                 <div style="margin-top:0.5rem;">
                     <span class="category-tag">{category}</span>
                     <span class="score {score_class}" style="float:right;">Score: {score:.4f}</span>
@@ -345,6 +388,24 @@ def main():
     tabs = st.tabs(["📊 Overview", "📚 BM25", "🧠 Semantic", "🔄 Hybrid RRF", "⚖️ Weighted Hybrid"])
 
     with tabs[0]:
+        # ---- نمایش بهترین پاسخ (Best Answer) ----
+        best_answer = results.get("best_answer", [])
+        if best_answer and isinstance(best_answer, list) and len(best_answer) > 0:
+            best = best_answer[0]
+            if best.get('answer') and best['answer'] != 'پاسخی یافت نشد.':
+                st.markdown(f"""
+                <div class="best-answer-card">
+                    <div class="label">🏆 Best Answer</div>
+                    <div class="answer">{best['answer']}</div>
+                    <div class="meta">
+                        Method: {best['method'].upper().replace('_', ' ')} &nbsp;|&nbsp;
+                        Score: {best['score']:.4f} &nbsp;|&nbsp;
+                        Category: {best['category']}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # ---- نمودارها ----
         col1, col2 = st.columns([2, 1])
         with col1:
             fig1 = create_comparison_chart(results, query)
@@ -359,19 +420,23 @@ def main():
             else:
                 st.info("No data for distribution chart.")
 
-        # متریک‌ها
+        # ---- متریک‌ها ----
         c1, c2, c3, c4 = st.columns(4)
-        total_results = sum(len(r) for r in results.values())
-        all_scores = [get_score(r) for method_results in results.values() for r in method_results[:5]]
+        # محاسبه تعداد کل نتایج (به جز best_answer)
+        total_results = sum(len(r) for method_name, r in results.items() if method_name != "best_answer")
+        all_scores = [get_score(r) for method_name, method_results in results.items() 
+                      if method_name != "best_answer" for r in method_results[:5]]
         avg_score = np.mean(all_scores) if all_scores else 0
         categories = set()
-        for method_results in results.values():
+        for method_name, method_results in results.items():
+            if method_name == "best_answer":
+                continue
             for r in method_results[:5]:
                 cat = r.get("category", "N/A")
                 if cat and cat != "N/A":
                     categories.add(cat)
-        best_method = max(results.keys(), key=lambda x: 
-                         np.mean([get_score(r) for r in results.get(x, [])[:5]]) if results.get(x) else 0)
+        best_method = max([m for m in results.keys() if m != "best_answer"], 
+                          key=lambda x: np.mean([get_score(r) for r in results.get(x, [])[:5]]) if results.get(x) else 0)
 
         with c1:
             st.markdown(f"""
@@ -402,7 +467,37 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-    # نمایش نتایج هر روش
+        # ---- بخش پاسخ استخراج‌شده با QA (اگر موجود باشد) ----
+        extracted_found = False
+        for method_name, method_results in results.items():
+            if method_name == "best_answer":
+                continue
+            for r in method_results[:5]:
+                if r.get("extracted_answer"):
+                    extracted_found = True
+                    break
+            if extracted_found:
+                break
+        
+        if extracted_found:
+            st.markdown("### ✅ Extracted Answer (QA)")
+            best_extracted_method = None
+            best_extracted_score = -1
+            best_extracted_item = None
+            for method_name, method_results in results.items():
+                if method_name == "best_answer":
+                    continue
+                for r in method_results[:5]:
+                    if r.get("extracted_answer") and r.get("qa_score", 0) > best_extracted_score:
+                        best_extracted_score = r.get("qa_score", 0)
+                        best_extracted_method = method_name
+                        best_extracted_item = r
+            if best_extracted_item:
+                st.success(f"**{best_extracted_method.upper().replace('_', ' ')}** — پاسخ دقیق: **{best_extracted_item['extracted_answer']}** (امتیاز QA: {best_extracted_score:.3f})")
+                with st.expander("مشاهده جزئیات بیشتر"):
+                    st.json(best_extracted_item)
+
+    # نمایش نتایج هر روش در تب‌های مربوطه
     method_emojis = {
         'bm25': '📚',
         'semantic': '🧠',
